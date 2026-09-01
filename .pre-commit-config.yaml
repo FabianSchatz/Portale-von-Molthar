@@ -1,0 +1,70 @@
+# pre-commit-hooks is not a dependency of the project, so install via repository
+repos:
+-   repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.2.0
+    hooks:
+    -   id: check-added-large-files
+        args: ["--maxkb=1000"]
+
+# Using local for the rest avoids version mismatches
+-   repo: local
+    hooks:
+    -   id: ruff
+        name: ruff
+        entry: ruff
+        language: system
+        types: [python]
+        args: ["check", "--fix"]
+    -   id: ruff-format
+        name: ruff-format
+        entry: ruff
+        language: system
+        types: [python]
+        args: ["format"]
+
+-   repo: local
+    hooks:
+    -   id: nb-clean
+        name: nb-clean
+        entry: nb-clean
+        language: system
+        types: [jupyter]
+        args: ["check"]
+
+-   repo: local
+    hooks:
+    -   id: mypy
+        name: mypy
+        entry: mypy
+        language: system
+        files: ^(src|examples|tests)/
+        types: [python]
+
+-   repo: local
+    hooks:
+    -   id: pylint
+        name: pylint
+        entry: pylint
+        language: system
+        files: ^(src|examples|tests)/
+        types: [python]
+        args: ["--fail-under=10"]
+
+-   repo: local
+    hooks:
+    -   id: bandit
+        name: bandit
+        entry: bandit
+        language: system
+        types: [python]
+        pass_filenames: false
+        args: ["-r", "src/.", "-c", "pyproject.toml"]
+
+-   repo: local
+    hooks:
+    -   id: flake8-errmsg
+        name: flake8-errmsg
+        entry: flake8
+        language: system
+        types: [python]
+        files: ^(src|tests|examples)/.*\.py$
