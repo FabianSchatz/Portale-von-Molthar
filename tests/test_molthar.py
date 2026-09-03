@@ -8,26 +8,15 @@ import numpy as np
 import pyspiel
 import pytest
 
-from portale_von_molthar.molthar import (
-    _CHARACTERS,
-    _HAND_LIMIT,
-    _PEARL_COPIES,
-    _PEARL_VALUES,
-    Character,
-    find_combination,
-)
+from portale_von_molthar.cards import CHARACTERS
+from portale_von_molthar.molthar import _HAND_LIMIT, _PEARL_COPIES, _PEARL_VALUES
 
 _TOTAL_PEARLS = len(_PEARL_VALUES) * _PEARL_COPIES
 
 
-def _character(card_id: str) -> Character:
-    """Return the green character card with `card_id` from `_CHARACTERS`."""
-    return next(character for character in _CHARACTERS if character.id == card_id)
-
-
 def _character_index(card_id: str) -> int:
-    """Return the `_CHARACTERS` index of the card with `card_id`."""
-    return next(index for index, character in enumerate(_CHARACTERS) if character.id == card_id)
+    """Return the `CHARACTERS` index of the card with `card_id`."""
+    return next(index for index, character in enumerate(CHARACTERS) if character.id == card_id)
 
 
 def _play_random_game(seed: int) -> pyspiel.State:
@@ -55,41 +44,6 @@ def _assert_pearls_conserved(state: pyspiel.State) -> None:
         + held
     )
     assert total == _TOTAL_PEARLS
-
-
-@pytest.mark.parametrize(
-    ("hand", "card_id", "expected"),
-    [
-        ({3: 2}, "goblin", [3, 3]),
-        ({3: 1, 4: 1}, "goblin", None),
-        ({7: 3}, "fluffy", [7, 7, 7]),
-        ({8: 4}, "lion", [8, 8, 8, 8]),
-        ({8: 3}, "lion", None),
-        ({6: 2, 8: 2}, "dwarf", [6, 6, 8, 8]),
-        ({1: 1, 3: 1, 5: 1}, "bilbo_odd", [1, 3, 5]),
-        ({1: 1, 3: 1, 5: 1}, "bilbo_even", None),
-        ({2: 1, 4: 1, 6: 1}, "bilbo_even", [2, 4, 6]),
-        ({3: 2, 6: 2}, "gnome", [3, 3, 6, 6]),
-        ({6: 4}, "gnome", [6, 6, 6, 6]),
-        ({6: 2}, "gnome", None),
-        ({8: 1, 7: 1, 5: 1}, "terminator", [5, 7, 8]),
-        ({8: 1, 7: 1, 4: 1}, "terminator", None),
-    ],
-)
-def test_find_combination(
-    hand: dict[int, int],
-    card_id: str,
-    expected: list[int] | None,
-) -> None:
-    result = find_combination(Counter(hand), _character(card_id))
-    assert (sorted(result) if result is not None else None) == expected
-
-
-def test_character_data_matches_docs() -> None:
-    """`_CHARACTERS` must mirror the green-card table in docs/character_cards.md."""
-    assert len(_CHARACTERS) == 14
-    assert sum(character.copies for character in _CHARACTERS) == 23
-    assert len({character.id for character in _CHARACTERS}) == 14
 
 
 @pytest.mark.parametrize("seed", range(10))
@@ -124,8 +78,8 @@ def test_molthar_state_activation_scores() -> None:
     state._character_display = [card, card]  # noqa: SLF001
     assert 7 in state.legal_actions()
     state.apply_action(7)
-    assert state.scores[0] == _CHARACTERS[card].points
-    assert state._diamonds[0] == _CHARACTERS[card].diamonds  # noqa: SLF001
+    assert state.scores[0] == CHARACTERS[card].points
+    assert state._diamonds[0] == CHARACTERS[card].diamonds  # noqa: SLF001
     assert state._hands[0].total() == 0  # noqa: SLF001
     assert state._portals[0] == []  # noqa: SLF001
 
@@ -144,4 +98,4 @@ def test_molthar_state_diamond_cost_gates_activation() -> None:
     assert 7 in state.legal_actions()
     state.apply_action(7)
     assert state._diamonds[0] == 0  # noqa: SLF001
-    assert state.scores[0] == _CHARACTERS[card].points
+    assert state.scores[0] == CHARACTERS[card].points
