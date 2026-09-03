@@ -12,7 +12,7 @@ Do not invent missing card data.
 
 | ID | Copies | Requirement | Power Points | Diamonds |
 |---|---:|---|---:|---:|
-| goblins | 3 | one pair | 1 | 0 |
+| goblin | 3 | one pair | 1 | 0 |
 | fluffy | 2 | three cards of the same value | 2 | 0 |
 | lion | 1 | 8, 8, 8, 8 | 5 | 0 |
 | dwarf | 3 | 6, 6, 8, 8 | 3 | 0 |
