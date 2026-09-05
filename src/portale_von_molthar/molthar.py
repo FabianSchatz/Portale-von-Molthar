@@ -19,8 +19,6 @@ Importing this module registers the game under the short name
 ``pyspiel.load_game("python_portale_von_molthar")``.
 """
 
-from __future__ import annotations
-
 import enum
 from collections import Counter
 from typing import Any, Final

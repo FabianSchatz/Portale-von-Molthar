@@ -5,8 +5,6 @@ Only the 14 green (no-special-ability) character cards from
 (permanent) ability cards belong in sibling modules once implemented.
 """
 
-from __future__ import annotations
-
 import itertools
 from collections import Counter
 from typing import Final, NamedTuple, TypeAlias

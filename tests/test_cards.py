@@ -1,7 +1,5 @@
 """Tests for green character card data and pearl-requirement matching."""
 
-from __future__ import annotations
-
 from collections import Counter
 
 import pytest
