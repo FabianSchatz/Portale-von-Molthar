@@ -10,8 +10,9 @@ Simplifications with respect to the printed rules (see module constants):
   pearl card's value (see RULES.md section 8).
 * Pearl cards can only be taken from the face-up display, never blind from the
   draw pile.
-* Going over the hand limit is resolved automatically instead of letting the
-  player pick which cards to drop.
+* Going over the hand limit is resolved by the player, who picks one pearl
+  value to drop per decision node at the end of the turn; loading the game
+  with ``auto_discard=true`` drops them by a built-in heuristic instead.
 * Two players; the retail game supports two to five.
 
 Importing this module registers the game under the short name
@@ -37,12 +38,18 @@ _HAND_LIMIT: Final = 5
 _ACTIONS_PER_TURN: Final = 3
 _TARGET_POINTS: Final = 12
 # Safety net: the simplified game has no forced progress, so two players who
-# only ever "pass" would loop forever.
-_MAX_NODES: Final = 3000
+# only ever "pass" would loop forever. Discards add up to three more nodes per
+# turn, so a random game needs noticeably more of them than the actions alone.
+_MAX_NODES: Final = 12000
 
 
 class Action(enum.IntEnum):
-    """The nine distinct player actions; three of them are spent per turn."""
+    """The distinct player actions.
+
+    The first nine are the turn actions, three of which are spent per turn;
+    the ``DISCARD_*`` ones are only legal while a player is over the hand
+    limit at the end of their turn and drop one pearl card of that value.
+    """
 
     TAKE_PEARL_0 = 0
     TAKE_PEARL_1 = 1
@@ -53,6 +60,14 @@ class Action(enum.IntEnum):
     TAKE_CHARACTER_1 = 6
     ACTIVATE_0 = 7
     ACTIVATE_1 = 8
+    DISCARD_1 = 9
+    DISCARD_2 = 10
+    DISCARD_3 = 11
+    DISCARD_4 = 12
+    DISCARD_5 = 13
+    DISCARD_6 = 14
+    DISCARD_7 = 15
+    DISCARD_8 = 16
 
 
 _GAME_TYPE: Final = pyspiel.GameType(
@@ -69,6 +84,7 @@ _GAME_TYPE: Final = pyspiel.GameType(
     provides_information_state_tensor=False,
     provides_observation_string=True,
     provides_observation_tensor=True,
+    parameter_specification={"auto_discard": False},
 )
 _GAME_INFO: Final = pyspiel.GameInfo(
     num_distinct_actions=len(Action),
@@ -97,6 +113,7 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
         self._portals: list[list[int]] = [[] for _ in range(_NUM_PLAYERS)]
         self._scores: list[int] = [0] * _NUM_PLAYERS
         self._diamonds: list[int] = [0] * _NUM_PLAYERS
+        self._auto_discard = bool(game.get_parameters().get("auto_discard", False))
         self._cur_player = 0
         self._actions_left = _ACTIONS_PER_TURN
         self._nodes = 0
@@ -182,12 +199,12 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
     def observation_tensor(self, player: int) -> list[float]:
         """Return the flat observation of `player`; see `observation_shape` for the layout."""
         planes: list[float] = []
+        # one-hot encoding of the current player
         planes.extend(1.0 if player == index else 0.0 for index in range(_NUM_PLAYERS))
-        planes.extend(
-            self._hands[player][value] / (_HAND_LIMIT + _ACTIONS_PER_TURN)
-            for value in _PEARL_VALUES
-        )
+        # count of each pearl value in the player's hand
+        planes.extend(float(self._hands[player][value]) for value in _PEARL_VALUES)
         for slot in range(_PEARL_DISPLAY_SIZE):
+            # for each pearl card slot, one-hot encoding of the value ("0" is an empty slot)
             value = self._pearl_display[slot] if slot < len(self._pearl_display) else 0
             planes.extend(1.0 if value == option else 0.0 for option in (0, *_PEARL_VALUES))
         for slot in range(_CHAR_DISPLAY_SIZE):
@@ -208,6 +225,12 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
 
     def _legal_actions(self, player: int) -> list[int]:
         """Return the sorted legal actions for `player`."""
+        if self._must_discard(player):
+            return [
+                Action.DISCARD_1 + value - 1
+                for value in _PEARL_VALUES
+                if self._hands[player][value]
+            ]
         actions: list[int] = list(range(len(self._pearl_display)))
         if self._pearl_display:
             actions.append(Action.REFRESH_PEARLS)
@@ -230,6 +253,10 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
         deck = self._pending_refill()
         if deck is not None:
             self._draw(deck, action)
+        elif self._must_discard(self._cur_player):
+            self._discard(self._cur_player, action - Action.DISCARD_1 + 1)
+            if not self._must_discard(self._cur_player):
+                self._end_turn()
         else:
             self._apply_player_action(action)
             self._end_action()
@@ -244,9 +271,8 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
     def _action_to_string(self, player: int, action: int) -> str:
         """Return a label for `action` as taken by `player`."""
         if player == pyspiel.PlayerId.CHANCE:
-            if len(self._pearl_display) < _PEARL_DISPLAY_SIZE and self._pearl_deck.total():
-                return f"DealPearl:{action}"
-            return f"DealCharacter:{CHARACTERS[action].id}"
+            pearl = len(self._pearl_display) < _PEARL_DISPLAY_SIZE and self._pearl_deck.total()
+            return f"DealPearl:{action}" if pearl else f"DealCharacter:{CHARACTERS[action].id}"
         if action <= Action.TAKE_PEARL_3:
             return f"TakePearl:{self._pearl_display[action]}"
         if action == Action.REFRESH_PEARLS:
@@ -254,8 +280,10 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
         if action <= Action.TAKE_CHARACTER_1:
             slot = action - Action.TAKE_CHARACTER_0
             return f"TakeCharacter:{CHARACTERS[self._character_display[slot]].id}"
-        slot = action - Action.ACTIVATE_0
-        return f"Activate:{CHARACTERS[self._portals[player][slot]].id}"
+        if action <= Action.ACTIVATE_1:
+            slot = action - Action.ACTIVATE_0
+            return f"Activate:{CHARACTERS[self._portals[player][slot]].id}"
+        return f"Discard:{action - Action.DISCARD_1 + 1}"
 
     def _pending_refill(self) -> Counter[int] | None:
         """Return the deck that must be drawn from before the next player move."""
@@ -308,12 +336,40 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
         self._actions_left -= 1
         if self._actions_left:
             return
-        self._trim_hand(self._cur_player)
+        if self._auto_discard:
+            self._trim_hand(self._cur_player)
+        if not self._must_discard(self._cur_player):
+            self._end_turn()
+
+    def _end_turn(self) -> None:
+        """Hand the turn to the next player and end the game once the target is reached."""
         self._cur_player = (self._cur_player + 1) % _NUM_PLAYERS
         self._actions_left = _ACTIONS_PER_TURN
         # The round is played to the end so that every player had equal turns.
         if self._cur_player == 0 and max(self._scores) >= _TARGET_POINTS:
             self._game_over = True
+
+    def _must_discard(self, player: int) -> bool:
+        """Return whether `player` still owes a discard before the turn can pass on.
+
+        A player is over the hand limit only after having spent all three of
+        their actions, so `_actions_left` doubles as the discard phase flag.
+        """
+        return (
+            not self._auto_discard
+            and not self._actions_left
+            and self._hands[player].total() > _HAND_LIMIT
+        )
+
+    def _discard(self, player: int, value: int) -> None:
+        """Move one pearl card of `value` from the hand of `player` to the discard pile."""
+        hand = self._hands[player]
+        if not hand[value]:
+            message = f"player {player} holds no pearl card of value {value}"
+            raise ValueError(message)
+        hand[value] -= 1
+        self._pearl_discard[value] += 1
+        self._hands[player] = +hand  # drop zero counts
 
     def _trim_hand(self, player: int) -> None:
         """Discard down to the hand limit, dropping the least useful pearls first."""
