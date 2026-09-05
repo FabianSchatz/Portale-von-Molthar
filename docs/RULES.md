@@ -61,11 +61,11 @@ Cards in draw decks are hidden.
 
 Shuffle the pearl deck and character deck separately.
 
-Create the pearl market by revealing:
+Create the pearl display by revealing:
 
 * 4 pearl cards
 
-Create the character market by revealing:
+Create the character display by revealing:
 
 * 2 character cards
 
@@ -75,7 +75,7 @@ Each player starts with:
 * an empty portal
 * no activated characters
 * no diamonds
-* 0 power points
+* 0 points
 
 The chosen start player takes the first turn.
 
@@ -90,7 +90,7 @@ A normal turn consists of exactly **3 actions**.
 For every action, the active player chooses one of the following four action types:
 
 1. Take a pearl card
-2. Replace the pearl market
+2. Replace the pearl display
 3. Put a character on the player's portal
 4. Activate a character
 
@@ -116,13 +116,13 @@ The player chooses either:
 
 and adds it to their hand.
 
-### Taking a face-up pearl
+### Taking a face-up pearl card
 
-If a face-up pearl is taken:
+If a face-up pearl card is taken:
 
-1. Remove it from the pearl market.
+1. Remove it from the pearl display.
 2. Add it to the active player's hand.
-3. Immediately reveal the top card of the pearl deck into the empty market position.
+3. Immediately reveal the top card of the pearl deck into the empty display position.
 
 If the newly revealed pearl card has a character-swap symbol, immediately:
 
@@ -136,13 +136,13 @@ The swap symbol does not trigger during initial setup.
 If the player chooses the top card of the pearl draw deck:
 
 * add it directly to the player's hand
-* the pearl market does not change
+* the pearl display does not change
 
 A swap symbol on a pearl drawn directly into a player's hand does not trigger.
 
 ---
 
-## 6.2 Replace the pearl market
+## 6.2 Replace the pearl display
 
 Discard all four face-up pearl cards.
 
@@ -520,10 +520,10 @@ Global state:
 * start player
 * pearl draw deck
 * pearl discard pile
-* pearl market
+* pearl display
 * character draw deck
 * character discard pile
-* character market
+* character display
 * whether the end-game sequence has been triggered
 * remaining final turns
 
