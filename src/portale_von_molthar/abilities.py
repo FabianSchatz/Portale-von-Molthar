@@ -51,4 +51,41 @@ class VirtualPearlAbility:
             raise TypeError(message)
 
 
-CharacterAbility: TypeAlias = VirtualPearlAbility
+@dataclass(frozen=True, slots=True)
+class PearlValueSubstitutionAbility:
+    """Allow a physical pearl value to represent additional effective values.
+
+    Every matching hand card remains one physical payment resource and is
+    discarded by its printed value. The additional values are mutually
+    exclusive interpretations of that resource.
+
+    Attributes:
+        printed_value: Value printed on each affected physical pearl card.
+        effective_values: Additional values an affected card may represent.
+        timing: Turn phase in which the substitution is available.
+    """
+
+    printed_value: int
+    effective_values: tuple[int, ...]
+    timing: AbilityTiming = AbilityTiming.DURING_TURN
+
+    def __post_init__(self) -> None:
+        """Validate the printed value, additional values, and timing."""
+        if not 1 <= self.printed_value <= 8:
+            message = "the substituted printed pearl value must be from 1 through 8"
+            raise ValueError(message)
+        if not self.effective_values or any(not 1 <= value <= 8 for value in self.effective_values):
+            message = "substituted effective pearl values must be from 1 through 8"
+            raise ValueError(message)
+        if self.printed_value in self.effective_values:
+            message = "substitutions only list values different from the printed value"
+            raise ValueError(message)
+        if len(set(self.effective_values)) != len(self.effective_values):
+            message = "substituted effective pearl values must be unique"
+            raise ValueError(message)
+        if not isinstance(self.timing, AbilityTiming):
+            message = "ability timing must be an AbilityTiming member"
+            raise TypeError(message)
+
+
+CharacterAbility: TypeAlias = VirtualPearlAbility | PearlValueSubstitutionAbility

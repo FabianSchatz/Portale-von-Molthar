@@ -187,32 +187,6 @@ def payment_plans(
     return _remove_dominated_plans(tuple(sorted(plans.values(), key=_plan_key)))
 
 
-def payment_plans_from_hand(
-    hand: Counter[int],
-    requirement: Requirement,
-    *,
-    available_diamonds: int = 0,
-    required_diamonds: int = 0,
-) -> tuple[PaymentPlan, ...]:
-    """Return payment plans using unmodified physical pearls from `hand`.
-
-    Args:
-        hand: Multiset of printed pearl values in the player's hand.
-        requirement: Pearl requirement to satisfy exactly.
-        available_diamonds: Diamonds available to pay explicit costs.
-        required_diamonds: Diamonds explicitly printed in the requirement.
-
-    Returns:
-        Complete payment plans available with the current green-card rules.
-    """
-    return payment_plans(
-        hand_resource_options(hand),
-        requirement,
-        available_diamonds=available_diamonds,
-        required_diamonds=required_diamonds,
-    )
-
-
 def _pearl_key(pearl: PearlPayment) -> tuple[object, ...]:
     """Return the canonical comparison key for one pearl use."""
     return (

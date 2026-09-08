@@ -61,7 +61,7 @@ def test_molthar_game_random_playthrough(seed: int, *, auto_discard: bool) -> No
 def test_molthar_game_registration() -> None:
     game = pyspiel.load_game("python_portale_von_molthar")
     assert game.num_players() == 2
-    assert game.num_distinct_actions() == 41
+    assert game.num_distinct_actions() == 49
     state = game.new_initial_state()
     assert state.is_chance_node()
     assert len(state.observation_tensor(0)) == game.observation_tensor_shape()[0]
@@ -314,3 +314,116 @@ def test_molthar_state_observation_tracks_selected_virtual_source() -> None:
     assert virtual_sources[barbarian_one] == 1.0
     assert sum(virtual_sources) == 1.0
     assert "paid=['UseVirtual:barbarian_1As1']" in state.observation_string(0)
+
+
+def test_molthar_state_peter_pan_allows_one_to_pay_as_eight() -> None:
+    """Peter Pan adds an effective 8 interpretation to every physical 1."""
+    game = pyspiel.load_game("python_portale_von_molthar")
+    state = game.new_initial_state()
+    peter_pan = _character_index("peter_pan")
+    hansel_and_gretel = _character_index("hansel_and_gretel")
+    state._portals[0] = [hansel_and_gretel]  # noqa: SLF001
+    state._hands[0] = Counter({1: 1, 8: 1})  # noqa: SLF001
+    state._pearl_display = [2, 3, 4, 5]  # noqa: SLF001
+    state._character_display = [peter_pan, peter_pan]  # noqa: SLF001
+
+    assert Action.ACTIVATE_0 not in state.legal_actions()
+    state._activated_characters[0] = [peter_pan]  # noqa: SLF001
+    assert Action.ACTIVATE_0 in state.legal_actions()
+    state.apply_action(Action.ACTIVATE_0)
+    assert state._hands[0] == Counter()  # noqa: SLF001
+    assert state._pearl_discard == Counter({1: 1, 8: 1})  # noqa: SLF001
+
+
+@pytest.mark.parametrize(
+    ("value", "target_id"),
+    [
+        (1, "barbarian_1"),
+        (2, "barbarian_2"),
+        (3, "barbarian_3"),
+        (4, "barbarian_4"),
+        (5, "barbarian_5"),
+        (6, "barbarian_6"),
+        (7, "barbarian_7"),
+        (8, "hansel_and_gretel"),
+    ],
+)
+def test_molthar_state_rumpelstiltskin_can_reinterpret_three(
+    value: int,
+    target_id: str,
+) -> None:
+    """Rumpelstiltskin lets each physical 3 represent every pearl value."""
+    game = pyspiel.load_game("python_portale_von_molthar")
+    state = game.new_initial_state()
+    rumpelstiltskin = _character_index("rumpelstiltskin")
+    target = _character_index(target_id)
+    state._activated_characters[0] = [rumpelstiltskin]  # noqa: SLF001
+    state._portals[0] = [target]  # noqa: SLF001
+    state._hands[0] = Counter((3, value))  # noqa: SLF001
+    state._pearl_display = [1, 2, 4, 5]  # noqa: SLF001
+    state._character_display = [target, target]  # noqa: SLF001
+
+    assert Action.ACTIVATE_0 in state.legal_actions()
+    state.apply_action(Action.ACTIVATE_0)
+    assert state._hands[0] == Counter()  # noqa: SLF001
+    assert state._pearl_discard == Counter((3, value))  # noqa: SLF001
+
+
+def test_molthar_state_rumpelstiltskin_can_reinterpret_each_three() -> None:
+    """Every physical 3 receives its own mutually exclusive interpretations."""
+    game = pyspiel.load_game("python_portale_von_molthar")
+    state = game.new_initial_state()
+    rumpelstiltskin = _character_index("rumpelstiltskin")
+    dwarf = _character_index("dwarf")
+    state._activated_characters[0] = [rumpelstiltskin]  # noqa: SLF001
+    state._portals[0] = [dwarf]  # noqa: SLF001
+    state._hands[0] = Counter({3: 4})  # noqa: SLF001
+    state._pearl_display = [1, 2, 4, 5]  # noqa: SLF001
+    state._character_display = [dwarf, dwarf]  # noqa: SLF001
+
+    assert Action.ACTIVATE_0 in state.legal_actions()
+    state.apply_action(Action.ACTIVATE_0)
+    assert state._hands[0] == Counter()  # noqa: SLF001
+    assert state._pearl_discard == Counter({3: 4})  # noqa: SLF001
+
+
+def test_molthar_state_payment_action_selects_rumpelstiltskin_interpretation() -> None:
+    """The player can choose a stable action for a transformed physical pearl."""
+    game = pyspiel.load_game("python_portale_von_molthar")
+    state = game.new_initial_state()
+    rumpelstiltskin = _character_index("rumpelstiltskin")
+    goblin = _character_index("goblin")
+    state._activated_characters[0] = [rumpelstiltskin]  # noqa: SLF001
+    state._portals[0] = [goblin]  # noqa: SLF001
+    state._hands[0] = Counter({3: 1, 4: 2})  # noqa: SLF001
+    state._pearl_display = [1, 2, 5, 6]  # noqa: SLF001
+    state._character_display = [goblin, goblin]  # noqa: SLF001
+
+    state.apply_action(Action.ACTIVATE_0)
+    transformed = Action.PAY_HAND_3_AS_4_RUMPELSTILTSKIN
+    assert state.legal_actions() == [Action.PAY_HAND_4, transformed]
+    assert state.action_to_string(0, transformed) == "PayHand:3As4:rumpelstiltskin"
+    state.apply_action(transformed)
+    assert state._hands[0] == Counter({4: 1})  # noqa: SLF001
+    assert state._pearl_discard == Counter({3: 1, 4: 1})  # noqa: SLF001
+
+
+def test_molthar_state_payment_action_selects_peter_pan_interpretation() -> None:
+    """Peter Pan's substitution remains distinct from paying a printed 8."""
+    game = pyspiel.load_game("python_portale_von_molthar")
+    state = game.new_initial_state()
+    peter_pan = _character_index("peter_pan")
+    hansel_and_gretel = _character_index("hansel_and_gretel")
+    state._activated_characters[0] = [peter_pan]  # noqa: SLF001
+    state._portals[0] = [hansel_and_gretel]  # noqa: SLF001
+    state._hands[0] = Counter({1: 1, 8: 2})  # noqa: SLF001
+    state._pearl_display = [2, 3, 4, 5]  # noqa: SLF001
+    state._character_display = [peter_pan, peter_pan]  # noqa: SLF001
+
+    state.apply_action(Action.ACTIVATE_0)
+    transformed = Action.PAY_HAND_1_AS_8_PETER_PAN
+    assert state.legal_actions() == [Action.PAY_HAND_8, transformed]
+    assert state.action_to_string(0, transformed) == "PayHand:1As8:peter_pan"
+    state.apply_action(transformed)
+    assert state._hands[0] == Counter({8: 1})  # noqa: SLF001
+    assert state._pearl_discard == Counter({1: 1, 8: 1})  # noqa: SLF001

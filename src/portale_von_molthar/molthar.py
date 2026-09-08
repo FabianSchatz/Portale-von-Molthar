@@ -2,8 +2,8 @@
 
 Simplifications with respect to the printed rules (see module constants):
 
-* The 14 green characters and the blue characters that provide virtual
-  pearls are modelled; other red and blue abilities are not yet implemented.
+* The 14 green characters and blue characters that provide or reinterpret
+  pearl values are modelled; other red and blue abilities are not yet implemented.
 * Diamonds are tracked as a plain per-player counter rather than as physical
   character cards drawn from the deck. They can pay explicit requirements but
   cannot yet modify a pearl card's value (see RULES.md section 8).
@@ -25,7 +25,11 @@ from typing import Any, Final
 
 import pyspiel
 
-from portale_von_molthar.abilities import AbilityTiming, VirtualPearlAbility
+from portale_von_molthar.abilities import (
+    AbilityTiming,
+    PearlValueSubstitutionAbility,
+    VirtualPearlAbility,
+)
 from portale_von_molthar.cards import CHARACTERS, Character
 from portale_von_molthar.decisions import PaymentDecision, PendingDecision
 from portale_von_molthar.payments import (
@@ -108,6 +112,14 @@ class Action(enum.IntEnum):
     USE_FUCHUR_AS_7 = 38
     USE_FUCHUR_AS_8 = 39
     USE_PHOENIX_AS_8 = 40
+    PAY_HAND_3_AS_1_RUMPELSTILTSKIN = 41
+    PAY_HAND_3_AS_2_RUMPELSTILTSKIN = 42
+    PAY_HAND_3_AS_4_RUMPELSTILTSKIN = 43
+    PAY_HAND_3_AS_5_RUMPELSTILTSKIN = 44
+    PAY_HAND_3_AS_6_RUMPELSTILTSKIN = 45
+    PAY_HAND_3_AS_7_RUMPELSTILTSKIN = 46
+    PAY_HAND_3_AS_8_RUMPELSTILTSKIN = 47
+    PAY_HAND_1_AS_8_PETER_PAN = 48
 
 
 _HAND_PAYMENT_ACTIONS: Final = {value: Action.PAY_HAND_1 + value - 1 for value in _PEARL_VALUES}
@@ -115,6 +127,16 @@ _VIRTUAL_PAYMENT_ACTIONS: Final = {
     **{(f"barbarian_{value}", value): Action.USE_BARBARIAN_1 + value - 1 for value in range(1, 8)},
     **{("fuchur", value): Action.USE_FUCHUR_AS_1 + value - 1 for value in _PEARL_VALUES},
     ("phoenix", 8): Action.USE_PHOENIX_AS_8,
+}
+_SUBSTITUTED_PAYMENT_ACTIONS: Final = {
+    ("rumpelstiltskin", 3, 1): Action.PAY_HAND_3_AS_1_RUMPELSTILTSKIN,
+    ("rumpelstiltskin", 3, 2): Action.PAY_HAND_3_AS_2_RUMPELSTILTSKIN,
+    ("rumpelstiltskin", 3, 4): Action.PAY_HAND_3_AS_4_RUMPELSTILTSKIN,
+    ("rumpelstiltskin", 3, 5): Action.PAY_HAND_3_AS_5_RUMPELSTILTSKIN,
+    ("rumpelstiltskin", 3, 6): Action.PAY_HAND_3_AS_6_RUMPELSTILTSKIN,
+    ("rumpelstiltskin", 3, 7): Action.PAY_HAND_3_AS_7_RUMPELSTILTSKIN,
+    ("rumpelstiltskin", 3, 8): Action.PAY_HAND_3_AS_8_RUMPELSTILTSKIN,
+    ("peter_pan", 1, 8): Action.PAY_HAND_1_AS_8_PETER_PAN,
 }
 _CHARACTER_INDEX_BY_ID: Final = {character.id: index for index, character in enumerate(CHARACTERS)}
 
@@ -462,7 +484,29 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
 
     def _activation_resources(self, player: int) -> ResourceOptions:
         """Return physical and persistent virtual resources available to `player`."""
-        resources = list(hand_resource_options(self._hands[player]))
+        resources: list[tuple[PearlPayment, ...]] = []
+        for group in hand_resource_options(self._hands[player]):
+            base_payment = group[0]
+            options = list(group)
+            for card in self._activated_characters[player]:
+                character = CHARACTERS[card]
+                ability = character.ability
+                if not isinstance(ability, PearlValueSubstitutionAbility):
+                    continue
+                if ability.timing is not AbilityTiming.DURING_TURN:
+                    continue
+                if base_payment.printed_value != ability.printed_value:
+                    continue
+                options.extend(
+                    PearlPayment(
+                        PearlSource.HAND,
+                        value,
+                        printed_value=ability.printed_value,
+                        modifiers=(character.id,),
+                    )
+                    for value in ability.effective_values
+                )
+            resources.append(tuple(options))
         for card in self._activated_characters[player]:
             character = CHARACTERS[card]
             ability = character.ability
@@ -540,16 +584,20 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
     def _payment_action(payment: PearlPayment) -> int:
         """Return the stable OpenSpiel action for one payment resource."""
         if payment.source is PearlSource.HAND:
-            if (
-                payment.printed_value != payment.effective_value
-                or payment.printed_value is None
-                or payment.diamonds_spent
-                or payment.modifiers
-                or not payment.discard
-            ):
+            if payment.printed_value is None or payment.diamonds_spent or not payment.discard:
                 message = "this physical payment interpretation has no action identifier"
                 raise RuntimeError(message)
-            return int(_HAND_PAYMENT_ACTIONS[payment.printed_value])
+            if not payment.modifiers and payment.printed_value == payment.effective_value:
+                return int(_HAND_PAYMENT_ACTIONS[payment.printed_value])
+            if len(payment.modifiers) == 1:
+                key = (payment.modifiers[0], payment.printed_value, payment.effective_value)
+                try:
+                    return int(_SUBSTITUTED_PAYMENT_ACTIONS[key])
+                except KeyError as error:
+                    message = "this substituted payment has no action identifier"
+                    raise RuntimeError(message) from error
+            message = "this physical payment interpretation has no action identifier"
+            raise RuntimeError(message)
         if payment.source_id is None:
             message = "a virtual payment needs a source identifier"
             raise RuntimeError(message)
@@ -578,6 +626,11 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
     def _payment_label(payment: PearlPayment) -> str:
         """Return a human-readable label for a physical or virtual payment."""
         if payment.source is PearlSource.HAND:
+            if payment.modifiers:
+                return (
+                    f"PayHand:{payment.printed_value}As{payment.effective_value}:"
+                    f"{payment.modifiers[0]}"
+                )
             return f"PayHand:{payment.printed_value}"
         return f"UseVirtual:{payment.source_id}As{payment.effective_value}"
 

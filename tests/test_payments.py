@@ -8,8 +8,8 @@ from portale_von_molthar.cards import CHARACTERS, Character
 from portale_von_molthar.payments import (
     PearlPayment,
     PearlSource,
+    hand_resource_options,
     payment_plans,
-    payment_plans_from_hand,
 )
 from portale_von_molthar.requirements import ExactValues
 
@@ -46,13 +46,14 @@ def _character(card_id: str) -> Character:
         ({8: 1, 7: 1, 4: 1}, "terminator", ()),
     ],
 )
-def test_payment_plans_from_hand(
+def test_payment_plans_with_hand_resources(
     hand: dict[int, int],
     card_id: str,
     expected: tuple[tuple[int, ...], ...],
 ) -> None:
     character = _character(card_id)
-    plans = payment_plans_from_hand(Counter(hand), character.requirement)
+    resources = hand_resource_options(Counter(hand))
+    plans = payment_plans(resources, character.requirement)
     assert tuple(plan.discarded_values for plan in plans) == expected
 
 

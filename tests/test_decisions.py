@@ -3,13 +3,14 @@
 from collections import Counter
 
 from portale_von_molthar.decisions import PaymentDecision
-from portale_von_molthar.payments import PearlPayment, payment_plans_from_hand
+from portale_von_molthar.payments import PearlPayment, hand_resource_options, payment_plans
 from portale_von_molthar.requirements import AnyOf, ExactValues, Parity, ParityValues
 
 
 def test_payment_decision_uses_one_canonical_path_per_plan() -> None:
-    plans = payment_plans_from_hand(
-        Counter({1: 1, 3: 1, 5: 1, 7: 1}),
+    resources = hand_resource_options(Counter({1: 1, 3: 1, 5: 1, 7: 1}))
+    plans = payment_plans(
+        resources,
         ParityValues(3, Parity.ODD),
     )
     decision = PaymentDecision(actor=0, target_owner=0, target_slot=1, plans=plans)
@@ -35,7 +36,8 @@ def test_payment_decision_uses_one_canonical_path_per_plan() -> None:
 
 def test_payment_decision_receives_no_dominated_longer_plan() -> None:
     requirement = AnyOf((ExactValues((1,)), ExactValues((1, 2))))
-    plans = payment_plans_from_hand(Counter({1: 1, 2: 1}), requirement)
+    resources = hand_resource_options(Counter({1: 1, 2: 1}))
+    plans = payment_plans(resources, requirement)
     decision = PaymentDecision(actor=0, target_owner=0, target_slot=0, plans=plans)
     assert decision.resolved_plan is not None
     assert decision.resolved_plan.discarded_values == (1,)
