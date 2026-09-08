@@ -1,12 +1,9 @@
-"""Structured character-card data.
+"""Structured data for implemented character cards."""
 
-Only the 14 green (no-special-ability) character cards from
-``docs/character_cards.md`` are modelled here; red (one-shot) and blue
-(permanent) ability cards belong in sibling modules once implemented.
-"""
+from dataclasses import dataclass
+from typing import Final
 
-from typing import Final, NamedTuple
-
+from portale_von_molthar.abilities import AbilityType, CharacterAbility, VirtualPearlAbility
 from portale_von_molthar.requirements import (
     AllOf,
     ExactValues,
@@ -43,17 +40,20 @@ def _count_sum(size: int, total: int) -> FixedCountSum:
     return FixedCountSum(size, total)
 
 
-class Character(NamedTuple):
+@dataclass(frozen=True, slots=True)
+class Character:
     """A character card with rewards and a typed activation requirement.
 
     Attributes:
         id: Stable identifier matching `docs/character_cards.md`.
-        requirement: ANDed pearl requirement clauses paid on activation.
+        requirement: Pearl requirement paid on activation.
         points: Power points awarded on activation.
         copies: Number of copies of this card in the character deck.
         diamonds: Diamonds awarded to the player on activation.
         diamonds_cost: Diamonds the player must additionally pay to activate
             (RULES.md section 8.2), on top of `requirement`.
+        ability_type: Whether the character has no ability or a red or blue one.
+        ability: Structured special ability, if the character has one.
     """
 
     id: str
@@ -62,9 +62,29 @@ class Character(NamedTuple):
     copies: int
     diamonds: int = 0
     diamonds_cost: int = 0
+    ability_type: AbilityType = AbilityType.NONE
+    ability: CharacterAbility | None = None
+
+    def __post_init__(self) -> None:
+        """Validate rewards and agreement between ability data and color."""
+        if self.points < 0 or self.copies <= 0 or self.diamonds < 0 or self.diamonds_cost < 0:
+            message = "points and diamonds must be nonnegative and copies must be positive"
+            raise ValueError(message)
+        if not isinstance(self.ability_type, AbilityType):
+            message = "ability type must be an AbilityType member"
+            raise TypeError(message)
+        if (self.ability_type is AbilityType.NONE) != (self.ability is None):
+            message = "characters without an ability need type NONE and all abilities need a type"
+            raise ValueError(message)
+        if (
+            isinstance(self.ability, VirtualPearlAbility)
+            and self.ability_type is not AbilityType.BLUE
+        ):
+            message = "virtual pearl abilities must belong to blue characters"
+            raise ValueError(message)
 
 
-# Green cards from docs/character_cards.md; copies sum to 23 as documented there.
+# Green cards and blue virtual-pearl providers from docs/character_cards.md.
 CHARACTERS: Final = (
     Character("goblin", _count_same(2), points=1, copies=3),
     Character("fluffy", _count_same(3), points=2, copies=2),
@@ -92,4 +112,31 @@ CHARACTERS: Final = (
     Character("terminator", _count_sum(3, 20), points=2, copies=1),
     Character("unicorn", _exact_values(1, 2, 3, 4), points=1, copies=1, diamonds=2),
     Character("trump", _exact_values(7, 7, 8, 8), points=3, copies=2, diamonds=1),
+    *(
+        Character(
+            f"barbarian_{value}",
+            _exact_values(value, value),
+            points=1,
+            copies=1,
+            ability_type=AbilityType.BLUE,
+            ability=VirtualPearlAbility((value,)),
+        )
+        for value in range(1, 8)
+    ),
+    Character(
+        "fuchur",
+        _exact_values(1, 1, 1, 1),
+        points=0,
+        copies=1,
+        ability_type=AbilityType.BLUE,
+        ability=VirtualPearlAbility(tuple(range(1, 9))),
+    ),
+    Character(
+        "phoenix",
+        _exact_values(1, 2),
+        points=0,
+        copies=2,
+        ability_type=AbilityType.BLUE,
+        ability=VirtualPearlAbility((8,)),
+    ),
 )

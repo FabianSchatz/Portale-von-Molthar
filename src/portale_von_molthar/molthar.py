@@ -2,12 +2,11 @@
 
 Simplifications with respect to the printed rules (see module constants):
 
-* Only the 14 green (no-special-ability) character cards from
-  ``docs/character_cards.md`` are modelled; red (one-shot) and blue
-  (permanent) ability cards are not yet implemented.
+* The 14 green characters and the blue characters that provide virtual
+  pearls are modelled; other red and blue abilities are not yet implemented.
 * Diamonds are tracked as a plain per-player counter rather than as physical
-  character cards drawn from the deck, and cannot yet be spent to modify a
-  pearl card's value (see RULES.md section 8).
+  character cards drawn from the deck. They can pay explicit requirements but
+  cannot yet modify a pearl card's value (see RULES.md section 8).
 * Pearl cards can only be taken from the face-up display, never blind from the
   draw pile.
 * Going over the hand limit is resolved by the player, who picks one pearl
@@ -26,13 +25,16 @@ from typing import Any, Final
 
 import pyspiel
 
+from portale_von_molthar.abilities import AbilityTiming, VirtualPearlAbility
 from portale_von_molthar.cards import CHARACTERS, Character
 from portale_von_molthar.decisions import PaymentDecision, PendingDecision
 from portale_von_molthar.payments import (
     PaymentPlan,
     PearlPayment,
     PearlSource,
-    payment_plans_from_hand,
+    ResourceOptions,
+    hand_resource_options,
+    payment_plans,
 )
 from portale_von_molthar.requirements import (
     ExactValues,
@@ -60,10 +62,9 @@ _MAX_NODES: Final = 12000
 class Action(enum.IntEnum):
     """The distinct player actions.
 
-    The first nine are the turn actions, three of which are spent per turn.
-    The ``DISCARD_*`` ones name one pearl card value in hand: they drop that
-    card while a player is over the hand limit at the end of their turn, and
-    select it as part of an activation payment.
+    The first nine are turn actions, three of which are spent per normal turn.
+    Discard actions name a pearl value dropped at the end of a turn. Payment
+    actions have stable meanings and never consume an additional turn action.
     """
 
     TAKE_PEARL_0 = 0
@@ -83,6 +84,39 @@ class Action(enum.IntEnum):
     DISCARD_6 = 14
     DISCARD_7 = 15
     DISCARD_8 = 16
+    PAY_HAND_1 = 17
+    PAY_HAND_2 = 18
+    PAY_HAND_3 = 19
+    PAY_HAND_4 = 20
+    PAY_HAND_5 = 21
+    PAY_HAND_6 = 22
+    PAY_HAND_7 = 23
+    PAY_HAND_8 = 24
+    USE_BARBARIAN_1 = 25
+    USE_BARBARIAN_2 = 26
+    USE_BARBARIAN_3 = 27
+    USE_BARBARIAN_4 = 28
+    USE_BARBARIAN_5 = 29
+    USE_BARBARIAN_6 = 30
+    USE_BARBARIAN_7 = 31
+    USE_FUCHUR_AS_1 = 32
+    USE_FUCHUR_AS_2 = 33
+    USE_FUCHUR_AS_3 = 34
+    USE_FUCHUR_AS_4 = 35
+    USE_FUCHUR_AS_5 = 36
+    USE_FUCHUR_AS_6 = 37
+    USE_FUCHUR_AS_7 = 38
+    USE_FUCHUR_AS_8 = 39
+    USE_PHOENIX_AS_8 = 40
+
+
+_HAND_PAYMENT_ACTIONS: Final = {value: Action.PAY_HAND_1 + value - 1 for value in _PEARL_VALUES}
+_VIRTUAL_PAYMENT_ACTIONS: Final = {
+    **{(f"barbarian_{value}", value): Action.USE_BARBARIAN_1 + value - 1 for value in range(1, 8)},
+    **{("fuchur", value): Action.USE_FUCHUR_AS_1 + value - 1 for value in _PEARL_VALUES},
+    ("phoenix", 8): Action.USE_PHOENIX_AS_8,
+}
+_CHARACTER_INDEX_BY_ID: Final = {character.id: index for index, character in enumerate(CHARACTERS)}
 
 
 _GAME_TYPE: Final = pyspiel.GameType(
@@ -212,7 +246,7 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
             [CHARACTERS[card].id for card in self._activated_characters[other]]
             for other in range(_NUM_PLAYERS)
         ]
-        paid = self._selected_physical_values()
+        paid = self._selected_payment_labels()
         return (
             f"p{player} hand={hand} "
             f"pearls={self._pearl_display} "
@@ -267,11 +301,17 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
         printed_values = self._selected_physical_values()
         effective_values = tuple(payment.effective_value for payment in selected)
         diamonds_spent = sum(payment.diamonds_spent for payment in selected)
+        virtual_sources = Counter(
+            _CHARACTER_INDEX_BY_ID[payment.source_id]
+            for payment in selected
+            if payment.source is PearlSource.VIRTUAL and payment.source_id is not None
+        )
         planes.append(float(payment_pending))
         planes.extend(1.0 if other == target_owner else 0.0 for other in range(_NUM_PLAYERS))
         planes.extend(1.0 if slot == slot_paid else 0.0 for slot in range(_PORTAL_SLOTS))
         planes.extend(float(Counter(printed_values)[value]) for value in _PEARL_VALUES)
         planes.extend(float(Counter(effective_values)[value]) for value in _PEARL_VALUES)
+        planes.extend(float(virtual_sources[card]) for card in range(len(CHARACTERS)))
         planes.append(float(diamonds_spent))
         return planes
 
@@ -347,9 +387,15 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
         elif action <= Action.ACTIVATE_1:
             slot = action - Action.ACTIVATE_0
             label = f"Activate:{CHARACTERS[self._portals[player][slot]].id}"
-        else:
+        elif action <= Action.DISCARD_8:
             value = action - Action.DISCARD_1 + 1
-            label = f"Pay:{value}" if self._pending_decision is not None else f"Discard:{value}"
+            label = f"Discard:{value}"
+        elif isinstance(self._pending_decision, PaymentDecision):
+            option = self._payment_option_for_action(self._pending_decision, action)
+            label = self._payment_label(option)
+        else:
+            message = f"action {action} is not meaningful in the current state"
+            raise ValueError(message)
         return label
 
     def _pending_refill(self) -> Counter[int] | None:
@@ -380,8 +426,11 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
             self._portals[player].append(
                 self._character_display.pop(action - Action.TAKE_CHARACTER_0),
             )
-        else:
+        elif action <= Action.ACTIVATE_1:
             self._activate(player, action - Action.ACTIVATE_0)
+        else:
+            message = f"action {action} is not a normal turn action"
+            raise ValueError(message)
 
     def _activate(self, player: int, slot: int) -> None:
         """Start paying for the character in `slot` (RULES.md section 6.4).
@@ -404,12 +453,35 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
 
     def _activation_plans(self, player: int, character: Character) -> tuple[PaymentPlan, ...]:
         """Return complete currently available plans for activating `character`."""
-        return payment_plans_from_hand(
-            self._hands[player],
+        return payment_plans(
+            self._activation_resources(player),
             character.requirement,
             available_diamonds=self._diamonds[player],
             required_diamonds=character.diamonds_cost,
         )
+
+    def _activation_resources(self, player: int) -> ResourceOptions:
+        """Return physical and persistent virtual resources available to `player`."""
+        resources = list(hand_resource_options(self._hands[player]))
+        for card in self._activated_characters[player]:
+            character = CHARACTERS[card]
+            ability = character.ability
+            if not isinstance(ability, VirtualPearlAbility):
+                continue
+            if ability.timing is not AbilityTiming.DURING_TURN:
+                continue
+            resources.append(
+                tuple(
+                    PearlPayment(
+                        PearlSource.VIRTUAL,
+                        value,
+                        source_id=character.id,
+                        discard=False,
+                    )
+                    for value in ability.values
+                ),
+            )
+        return tuple(resources)
 
     def _pending_decision_actions(
         self,
@@ -419,16 +491,7 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
         """Map semantic options of `decision` to OpenSpiel action identifiers."""
         if player != decision.actor:
             return []
-        actions: set[int] = set()
-        for option in decision.options():
-            if not self._is_plain_physical_payment(option):
-                message = "this payment resource does not have an OpenSpiel action yet"
-                raise RuntimeError(message)
-            if option.printed_value is None:
-                message = "a physical payment action needs a printed pearl value"
-                raise RuntimeError(message)
-            actions.add(Action.DISCARD_1 + option.printed_value - 1)
-        return sorted(actions)
+        return sorted({self._payment_action(option) for option in decision.options()})
 
     def _apply_pending_decision(
         self,
@@ -440,16 +503,7 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
         if player != decision.actor:
             message = "only the decision actor may choose a payment"
             raise ValueError(message)
-        value = action - Action.DISCARD_1 + 1
-        matching = tuple(
-            option
-            for option in decision.options()
-            if option.source is PearlSource.HAND and option.printed_value == value
-        )
-        if len(matching) != 1:
-            message = "payment action does not identify exactly one offered resource"
-            raise ValueError(message)
-        option = matching[0]
+        option = self._payment_option_for_action(decision, action)
         updated = decision.choose(option)
         plan = updated.resolved_plan
         if plan is None:
@@ -483,14 +537,56 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
         self._diamonds[player] += character.diamonds - plan.diamonds_spent
 
     @staticmethod
-    def _is_plain_physical_payment(payment: PearlPayment) -> bool:
-        """Return whether the current compact action range can encode `payment`."""
-        return (
-            payment.source is PearlSource.HAND
-            and payment.printed_value == payment.effective_value
-            and not payment.diamonds_spent
-            and not payment.modifiers
+    def _payment_action(payment: PearlPayment) -> int:
+        """Return the stable OpenSpiel action for one payment resource."""
+        if payment.source is PearlSource.HAND:
+            if (
+                payment.printed_value != payment.effective_value
+                or payment.printed_value is None
+                or payment.diamonds_spent
+                or payment.modifiers
+                or not payment.discard
+            ):
+                message = "this physical payment interpretation has no action identifier"
+                raise RuntimeError(message)
+            return int(_HAND_PAYMENT_ACTIONS[payment.printed_value])
+        if payment.source_id is None:
+            message = "a virtual payment needs a source identifier"
+            raise RuntimeError(message)
+        try:
+            return int(_VIRTUAL_PAYMENT_ACTIONS[(payment.source_id, payment.effective_value)])
+        except KeyError as error:
+            message = "this virtual payment interpretation has no action identifier"
+            raise RuntimeError(message) from error
+
+    @classmethod
+    def _payment_option_for_action(
+        cls,
+        decision: PaymentDecision,
+        action: int,
+    ) -> PearlPayment:
+        """Return the unique currently offered payment represented by `action`."""
+        matching = tuple(
+            option for option in decision.options() if cls._payment_action(option) == action
         )
+        if len(matching) != 1:
+            message = "payment action does not identify exactly one offered resource"
+            raise ValueError(message)
+        return matching[0]
+
+    @staticmethod
+    def _payment_label(payment: PearlPayment) -> str:
+        """Return a human-readable label for a physical or virtual payment."""
+        if payment.source is PearlSource.HAND:
+            return f"PayHand:{payment.printed_value}"
+        return f"UseVirtual:{payment.source_id}As{payment.effective_value}"
+
+    def _selected_payment_labels(self) -> tuple[str, ...]:
+        """Return public labels of resources selected for a pending payment."""
+        decision = self._pending_decision
+        if not isinstance(decision, PaymentDecision):
+            return ()
+        return tuple(self._payment_label(payment) for payment in decision.selected)
 
     def _selected_physical_values(self) -> tuple[int, ...]:
         """Return publicly selected physical pearl values in a pending payment."""
@@ -614,6 +710,7 @@ class MoltharGame(pyspiel.Game):  # type: ignore[misc]
             + _PORTAL_SLOTS  # portal slot of a half-paid activation
             + len(_PEARL_VALUES)  # printed values selected towards it
             + len(_PEARL_VALUES)  # corresponding effective values
+            + len(CHARACTERS)  # selected virtual-source character counts
             + 1,  # diamonds committed by selected pearl modifications
         ]
 
