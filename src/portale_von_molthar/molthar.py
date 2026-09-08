@@ -26,7 +26,7 @@ from typing import Any, Final
 
 import pyspiel
 
-from portale_von_molthar.cards import CHARACTERS, find_combination
+from portale_von_molthar.cards import CHARACTERS, payment_options
 
 _NUM_PLAYERS: Final = 2
 _PEARL_VALUES: Final = tuple(range(1, 9))
@@ -46,9 +46,10 @@ _MAX_NODES: Final = 12000
 class Action(enum.IntEnum):
     """The distinct player actions.
 
-    The first nine are the turn actions, three of which are spent per turn;
-    the ``DISCARD_*`` ones are only legal while a player is over the hand
-    limit at the end of their turn and drop one pearl card of that value.
+    The first nine are the turn actions, three of which are spent per turn.
+    The ``DISCARD_*`` ones name one pearl card value in hand: they drop that
+    card while a player is over the hand limit at the end of their turn, and
+    hand it over as part of the payment while an activation is being paid.
     """
 
     TAKE_PEARL_0 = 0
@@ -115,6 +116,8 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
         self._diamonds: list[int] = [0] * _NUM_PLAYERS
         self._auto_discard = bool(game.get_parameters().get("auto_discard", False))
         self._cur_player = 0
+        # (portal slot, pearl values handed over so far) of a half-paid activation.
+        self._payment: tuple[int, tuple[int, ...]] | None = None
         self._actions_left = _ACTIONS_PER_TURN
         self._nodes = 0
         self._game_over = False
@@ -143,7 +146,9 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
                 f"p{player}: score={self._scores[player]} diamonds={self._diamonds[player]} "
                 f"portal={portal} hand={hand}",
             )
-        lines.append(f"turn=p{self._cur_player} actions_left={self._actions_left}")
+        lines.append(
+            f"turn=p{self._cur_player} actions_left={self._actions_left} paying={self._payment}",
+        )
         return "\n".join(lines)
 
     # endregion
@@ -193,7 +198,8 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
             f"pearls={self._pearl_display} "
             f"chars={[CHARACTERS[card].id for card in self._character_display]} "
             f"portals={portals} scores={self._scores} diamonds={self._diamonds} "
-            f"to_move=p{self._cur_player} left={self._actions_left}"
+            f"to_move=p{self._cur_player} left={self._actions_left} "
+            f"paid={list(self._payment[1]) if self._payment else []}"
         )
 
     def observation_tensor(self, player: int) -> list[float]:
@@ -217,6 +223,11 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
         planes.extend(
             1.0 if self._actions_left == step + 1 else 0.0 for step in range(_ACTIONS_PER_TURN)
         )
+        # pending activation: the portal slot being paid and the pearls handed
+        # over so far (public, they are played out of the hand face up)
+        slot_paid, values_paid = self._payment or (None, ())
+        planes.extend(1.0 if slot == slot_paid else 0.0 for slot in range(_PORTAL_SLOTS))
+        planes.extend(float(Counter(values_paid)[value]) for value in _PEARL_VALUES)
         return planes
 
     # endregion
@@ -225,6 +236,8 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
 
     def _legal_actions(self, player: int) -> list[int]:
         """Return the sorted legal actions for `player`."""
+        if self._payment is not None:
+            return self._payable_actions(player, self._payment)
         if self._must_discard(player):
             return [
                 Action.DISCARD_1 + value - 1
@@ -242,7 +255,7 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
             character = CHARACTERS[card]
             if self._diamonds[player] < character.diamonds_cost:
                 continue
-            if find_combination(self._hands[player], character) is not None:
+            if payment_options(self._hands[player], character):
                 actions.append(Action.ACTIVATE_0 + slot)
         # A player is never stuck: refreshing an empty display is a legal pass.
         return sorted(actions) if actions else [int(Action.REFRESH_PEARLS)]
@@ -253,13 +266,18 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
         deck = self._pending_refill()
         if deck is not None:
             self._draw(deck, action)
+        elif self._payment is not None:
+            self._pay(self._cur_player, self._payment, action - Action.DISCARD_1 + 1)
+            if self._payment is None:  # the activation resolved
+                self._end_action()
         elif self._must_discard(self._cur_player):
             self._discard(self._cur_player, action - Action.DISCARD_1 + 1)
             if not self._must_discard(self._cur_player):
                 self._end_turn()
         else:
             self._apply_player_action(action)
-            self._end_action()
+            if self._payment is None:  # an activation may still want paying
+                self._end_action()
         if not self._pearl_deck.total():
             # ponytail: instant reshuffle of the discard pile; the real game
             # shuffles once, which only matters for card counting.
@@ -283,7 +301,8 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
         if action <= Action.ACTIVATE_1:
             slot = action - Action.ACTIVATE_0
             return f"Activate:{CHARACTERS[self._portals[player][slot]].id}"
-        return f"Discard:{action - Action.DISCARD_1 + 1}"
+        value = action - Action.DISCARD_1 + 1
+        return f"Pay:{value}" if self._payment is not None else f"Discard:{value}"
 
     def _pending_refill(self) -> Counter[int] | None:
         """Return the deck that must be drawn from before the next player move."""
@@ -317,19 +336,73 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
             self._activate(player, action - Action.ACTIVATE_0)
 
     def _activate(self, player: int, slot: int) -> None:
-        """Pay the requirement of the character in `slot` and score its rewards."""
+        """Start paying for the character in `slot` (RULES.md section 6.4).
+
+        Which pearl cards to spend is a strategic choice, so the player hands
+        them over one at a time with the ``DISCARD_*`` actions instead of the
+        matcher picking for them.
+        """
         character = CHARACTERS[self._portals[player][slot]]
-        combination = find_combination(self._hands[player], character)
-        if combination is None or self._diamonds[player] < character.diamonds_cost:
+        payable = payment_options(self._hands[player], character)
+        if not payable or self._diamonds[player] < character.diamonds_cost:
             message = f"cannot activate {character.id} with the current hand"
             raise ValueError(message)
-        for value in combination:
+        self._payment = (slot, ())
+        self._settle_payment(player, self._payment)
+
+    def _open_payments(
+        self,
+        player: int,
+        payment: tuple[int, tuple[int, ...]],
+    ) -> list[tuple[int, ...]]:
+        """Return the full payments still consistent with the pearls handed over so far."""
+        slot, paid = payment
+        character = CHARACTERS[self._portals[player][slot]]
+        outstanding = Counter(paid)
+        return [
+            option
+            for option in payment_options(self._hands[player], character)
+            if not outstanding - Counter(option)
+        ]
+
+    def _payable_actions(self, player: int, payment: tuple[int, tuple[int, ...]]) -> list[int]:
+        """Return the pearl values that can still extend the pending payment."""
+        paid = Counter(payment[1])
+        return sorted(
+            {
+                Action.DISCARD_1 + value - 1
+                for option in self._open_payments(player, payment)
+                for value in Counter(option) - paid
+            },
+        )
+
+    def _pay(self, player: int, payment: tuple[int, tuple[int, ...]], value: int) -> None:
+        """Hand one pearl card of `value` over towards the pending activation."""
+        slot, paid = payment
+        self._payment = (slot, (*paid, value))
+        self._settle_payment(player, self._payment)
+
+    def _settle_payment(self, player: int, payment: tuple[int, tuple[int, ...]]) -> None:
+        """Resolve the activation as soon as only one payment is still possible.
+
+        A payment that is complete and one whose remainder is forced both leave
+        a single option, so the player is only asked while a choice is left.
+        """
+        options = self._open_payments(player, payment)
+        if len(options) == 1:
+            self._resolve_activation(player, payment[0], options[0])
+
+    def _resolve_activation(self, player: int, slot: int, pearls: tuple[int, ...]) -> None:
+        """Discard `pearls`, take the character in `slot` off the portal and score its rewards."""
+        character = CHARACTERS[self._portals[player][slot]]
+        for value in pearls:
             self._hands[player][value] -= 1
             self._pearl_discard[value] += 1
         self._hands[player] = +self._hands[player]  # drop zero counts
         self._portals[player].pop(slot)
         self._scores[player] += character.points
         self._diamonds[player] += character.diamonds - character.diamonds_cost
+        self._payment = None
 
     def _end_action(self) -> None:
         """Consume one action and hand over the turn once three have been spent."""
@@ -432,7 +505,9 @@ class MoltharGame(pyspiel.Game):  # type: ignore[misc]
             + (_CHAR_DISPLAY_SIZE + _NUM_PLAYERS * _PORTAL_SLOTS) * (1 + len(CHARACTERS))
             + _NUM_PLAYERS  # scores
             + _NUM_PLAYERS  # diamonds
-            + _ACTIONS_PER_TURN,
+            + _ACTIONS_PER_TURN
+            + _PORTAL_SLOTS  # portal slot of a half-paid activation
+            + len(_PEARL_VALUES),  # pearls handed over towards it
         ]
 
 

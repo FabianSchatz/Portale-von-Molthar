@@ -134,3 +134,45 @@ def test_molthar_state_diamond_cost_gates_activation() -> None:
     state.apply_action(7)
     assert state._diamonds[0] == 0  # noqa: SLF001
     assert state.scores[0] == CHARACTERS[card].points
+
+
+def test_molthar_state_activation_payment_choice() -> None:
+    """With several payable pearl sets, the player picks which cards to hand over."""
+    game = pyspiel.load_game("python_portale_von_molthar")
+    state = game.new_initial_state()
+    card = _character_index("bilbo_odd")
+    state._portals[0] = [card]  # noqa: SLF001
+    state._hands[0] = Counter({1: 1, 3: 1, 5: 1, 7: 1})  # noqa: SLF001
+    state._pearl_display = [2, 2, 4, 4]  # noqa: SLF001
+    state._character_display = [card, card]  # noqa: SLF001
+    state.apply_action(7)
+    # Any three of the four odd cards pay, so all four are still on offer.
+    assert state.legal_actions() == [9, 11, 13, 15]  # pay a 1, 3, 5 or 7
+    assert state.action_to_string(0, 15) == "Pay:7"
+    state.apply_action(15)
+    assert state.legal_actions() == [9, 11, 13]
+    state.apply_action(9)
+    # Two options are left, so the last card is still a choice.
+    assert state.legal_actions() == [11, 13]
+    state.apply_action(13)
+    assert state._hands[0] == Counter({3: 1})  # noqa: SLF001
+    assert state._pearl_discard == Counter({1: 1, 5: 1, 7: 1})  # noqa: SLF001
+    assert state.scores[0] == CHARACTERS[card].points
+    assert state._actions_left == 2  # noqa: SLF001
+
+
+def test_molthar_state_activation_pays_a_forced_remainder() -> None:
+    """A payment with no choice left is handed over without asking the player."""
+    game = pyspiel.load_game("python_portale_von_molthar")
+    state = game.new_initial_state()
+    card = _character_index("gnome")
+    state._portals[0] = [card]  # noqa: SLF001
+    # Greedy clause matching would spend the sixes on the pair and refuse this.
+    state._hands[0] = Counter({6: 2, 7: 2})  # noqa: SLF001
+    state._pearl_display = [1, 2, 3, 4]  # noqa: SLF001
+    state._character_display = [card, card]  # noqa: SLF001
+    assert 7 in state.legal_actions()
+    state.apply_action(7)
+    assert state._payment is None  # noqa: SLF001
+    assert state._hands[0].total() == 0  # noqa: SLF001
+    assert state.scores[0] == CHARACTERS[card].points

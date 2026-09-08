@@ -7,6 +7,7 @@ Only the 14 green (no-special-ability) character cards from
 
 import itertools
 from collections import Counter
+from collections.abc import Iterator
 from typing import Final, NamedTuple, TypeAlias
 
 
@@ -113,71 +114,81 @@ CHARACTERS: Final = (
 )
 
 
-def _match_exact(hand: Counter[int], values: tuple[int, ...]) -> list[int] | None:
-    """Match an "exact" clause: every value in `values` must be present in `hand`."""
-    needed = Counter(values)
-    if all(hand[value] >= copies for value, copies in needed.items()):
-        return list(values)
-    return None
+def _clause_options(pool: Counter[int], part: RequirementPart) -> Iterator[tuple[int, ...]]:
+    """Yield every distinct pearl multiset from `pool` that satisfies `part` on its own.
 
+    Args:
+        pool: Multiset of pearl values still available for this clause.
+        part: The single requirement clause to satisfy.
 
-def _match_same(hand: Counter[int], count: int) -> list[int] | None:
-    """Match a "same" clause with the lowest value that has enough copies."""
-    for value in sorted(hand):
-        if hand[value] >= count:
-            return [value] * count
-    return None
-
-
-def _match_parity(hand: Counter[int], count: int, *, even: bool) -> list[int] | None:
-    """Match a "parity" clause with the `count` lowest cards of matching parity."""
-    pool = [value for value in sorted(hand.elements()) if (value % 2 == 0) == even]
-    if len(pool) < count:
-        return None
-    return pool[:count]
-
-
-def _match_sum(hand: Counter[int], count: int, total: int) -> list[int] | None:
-    """Match a "sum" clause with the lexicographically lowest fitting combination."""
-    cards = sorted(hand.elements())
-    for combination in itertools.combinations(cards, count):
-        if sum(combination) == total:
-            return list(combination)
-    return None
-
-
-def _match_part(hand: Counter[int], part: RequirementPart) -> list[int] | None:
-    """Match one requirement clause against `hand`, or return None if it cannot be paid."""
+    Yields:
+        Sorted tuples of pearl values, each a complete payment of `part`.
+    """
     if part.kind == "exact":
-        return _match_exact(hand, part.values)
+        needed = Counter(part.values)
+        if all(pool[value] >= copies for value, copies in needed.items()):
+            yield tuple(sorted(part.values))
+        return
     if part.kind == "same":
-        return _match_same(hand, part.size)
+        yield from ((value,) * part.size for value in sorted(pool) if pool[value] >= part.size)
+        return
+    cards = sorted(pool.elements())
     if part.kind == "parity":
-        return _match_parity(hand, part.size, even=part.even)
-    return _match_sum(hand, part.size, part.total)  # kind == "sum"
+        cards = [value for value in cards if (value % 2 == 0) == part.even]
+        yield from dict.fromkeys(itertools.combinations(cards, part.size))
+        return
+    yield from dict.fromkeys(  # kind == "sum"
+        combination
+        for combination in itertools.combinations(cards, part.size)
+        if sum(combination) == part.total
+    )
 
 
-def find_combination(hand: Counter[int], character: Character) -> list[int] | None:
-    """Find pearl values from `hand` that satisfy every clause of `character`'s requirement.
+def _splits(pool: Counter[int], parts: Requirement) -> bool:
+    """Return whether `pool` splits exactly among `parts`, one pearl card per clause position.
 
-    Clauses are matched greedily in the order they are declared, each consuming
-    the pearls it needs before the next clause is tried. This is deterministic
-    and, for every requirement currently in `CHARACTERS`, also complete: no
-    green card's clauses can consume the same pearl in two conflicting ways.
+    Backtracks over every way a clause can be paid, so a pearl claimed by an
+    early clause is given back when a later one cannot be met (RULES.md section
+    7.10). `pool` must be consumed completely: it is a candidate payment, not
+    the whole hand.
+
+    Args:
+        pool: Multiset of pearl values to distribute over `parts`.
+        parts: The remaining ANDed requirement clauses.
+
+    Returns:
+        Whether such a split exists.
+    """
+    if not parts:
+        return not pool.total()
+    head, *rest = parts
+    return any(
+        _splits(pool - Counter(choice), tuple(rest)) for choice in _clause_options(pool, head)
+    )
+
+
+def payment_options(hand: Counter[int], character: Character) -> list[tuple[int, ...]]:
+    """Return every distinct pearl multiset from `hand` that pays `character`'s requirement.
+
+    Which of these to spend is a strategic choice and therefore left to the
+    player rather than decided here; see `MoltharState._activate`.
 
     Args:
         hand: Multiset of pearl values held by the player.
         character: The character card whose requirement must be met.
 
     Returns:
-        The pearl values to discard, or None if the hand cannot pay.
+        The payable pearl-value multisets as sorted tuples, in ascending order;
+        empty if the hand cannot pay.
     """
-    working = Counter(hand)
-    combination: list[int] = []
-    for part in character.requirement:
-        found = _match_part(working, part)
-        if found is None:
-            return None
-        working.subtract(found)
-        combination.extend(found)
-    return combination
+    size = sum(
+        len(part.values) if part.kind == "exact" else part.size for part in character.requirement
+    )
+    # ponytail: brute force over hand subsets; a hand holds at most eight cards.
+    return sorted(
+        {
+            combination
+            for combination in itertools.combinations(sorted(hand.elements()), size)
+            if _splits(Counter(combination), character.requirement)
+        },
+    )
