@@ -82,6 +82,7 @@ def test_molthar_state_activation_scores() -> None:
     assert state._diamonds[0] == CHARACTERS[card].diamonds  # noqa: SLF001
     assert state._hands[0].total() == 0  # noqa: SLF001
     assert state._portals[0] == []  # noqa: SLF001
+    assert state._activated_characters[0] == [card]  # noqa: SLF001
 
 
 def test_molthar_state_discard_choice() -> None:
@@ -146,15 +147,13 @@ def test_molthar_state_activation_payment_choice() -> None:
     state._pearl_display = [2, 2, 4, 4]  # noqa: SLF001
     state._character_display = [card, card]  # noqa: SLF001
     state.apply_action(7)
-    # Any three of the four odd cards pay, so all four are still on offer.
-    assert state.legal_actions() == [9, 11, 13, 15]  # pay a 1, 3, 5 or 7
-    assert state.action_to_string(0, 15) == "Pay:7"
-    state.apply_action(15)
-    assert state.legal_actions() == [9, 11, 13]
+    # Canonical ordering gives each payment set only one path through the tree.
+    assert state.legal_actions() == [9, 11]  # start with a 1 or 3
+    assert state.action_to_string(0, 9) == "Pay:1"
     state.apply_action(9)
-    # Two options are left, so the last card is still a choice.
     assert state.legal_actions() == [11, 13]
     state.apply_action(13)
+    # The only remaining plan is 1, 5, 7, so its remainder is automatic.
     assert state._hands[0] == Counter({3: 1})  # noqa: SLF001
     assert state._pearl_discard == Counter({1: 1, 5: 1, 7: 1})  # noqa: SLF001
     assert state.scores[0] == CHARACTERS[card].points
@@ -173,6 +172,6 @@ def test_molthar_state_activation_pays_a_forced_remainder() -> None:
     state._character_display = [card, card]  # noqa: SLF001
     assert 7 in state.legal_actions()
     state.apply_action(7)
-    assert state._payment is None  # noqa: SLF001
+    assert state._pending_decision is None  # noqa: SLF001
     assert state._hands[0].total() == 0  # noqa: SLF001
     assert state.scores[0] == CHARACTERS[card].points
