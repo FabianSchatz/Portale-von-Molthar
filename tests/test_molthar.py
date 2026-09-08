@@ -61,7 +61,7 @@ def test_molthar_game_random_playthrough(seed: int, *, auto_discard: bool) -> No
 def test_molthar_game_registration() -> None:
     game = pyspiel.load_game("python_portale_von_molthar")
     assert game.num_players() == 2
-    assert game.num_distinct_actions() == 49
+    assert game.num_distinct_actions() == 51
     state = game.new_initial_state()
     assert state.is_chance_node()
     assert len(state.observation_tensor(0)) == game.observation_tensor_shape()[0]
@@ -83,6 +83,108 @@ def test_molthar_state_activation_scores() -> None:
     assert state._hands[0].total() == 0  # noqa: SLF001
     assert state._portals[0] == []  # noqa: SLF001
     assert state._activated_characters[0] == [card]  # noqa: SLF001
+
+
+@pytest.mark.parametrize(
+    ("card_id", "value"),
+    [
+        ("irrlicht_1", 3),
+        ("irrlicht_1", 6),
+        ("irrlicht_2", 4),
+        ("irrlicht_2", 5),
+    ],
+)
+def test_molthar_state_neighbor_can_activate_irrlicht(card_id: str, value: int) -> None:
+    """A payable Irrlicht on the neighboring portal is a distinct activation."""
+    game = pyspiel.load_game("python_portale_von_molthar")
+    state = game.new_initial_state()
+    card = _character_index(card_id)
+    state._portals[1] = [card]  # noqa: SLF001
+    state._hands[0] = Counter({value: 3})  # noqa: SLF001
+    state._pearl_display = [1, 2, 7, 8]  # noqa: SLF001
+    state._character_display = [card, card]  # noqa: SLF001
+
+    assert Action.ACTIVATE_NEIGHBOR_0 in state.legal_actions()
+    assert state.action_to_string(0, Action.ACTIVATE_NEIGHBOR_0) == (f"ActivateNeighbor:{card_id}")
+    state.apply_action(Action.ACTIVATE_NEIGHBOR_0)
+
+    assert state._hands[0] == Counter()  # noqa: SLF001
+    assert state._portals[1] == []  # noqa: SLF001
+    assert state._activated_characters[0] == [card]  # noqa: SLF001
+    assert state.scores[0] == 3
+    assert state.scores[1] == 0
+    assert state._actions_left == 2  # noqa: SLF001
+
+
+def test_molthar_state_irrlicht_payment_keeps_foreign_target() -> None:
+    """A pending Irrlicht payment retains the owner of the target portal."""
+    game = pyspiel.load_game("python_portale_von_molthar")
+    state = game.new_initial_state()
+    card = _character_index("irrlicht_1")
+    state._portals[1] = [card]  # noqa: SLF001
+    state._hands[0] = Counter({3: 3, 6: 3})  # noqa: SLF001
+    state._pearl_display = [1, 2, 7, 8]  # noqa: SLF001
+    state._character_display = [card, card]  # noqa: SLF001
+
+    state.apply_action(Action.ACTIVATE_NEIGHBOR_0)
+
+    decision = state._pending_decision  # noqa: SLF001
+    assert decision is not None
+    assert decision.actor == 0
+    assert decision.target_owner == 1
+    assert decision.target_slot == 0
+    assert state.legal_actions() == [Action.PAY_HAND_3, Action.PAY_HAND_6]
+    assert "payment_target=p1:0" in state.observation_string(0)
+
+    state.apply_action(Action.PAY_HAND_3)
+
+    assert state._pending_decision is None  # noqa: SLF001
+    assert state._hands[0] == Counter({6: 3})  # noqa: SLF001
+    assert state._portals[1] == []  # noqa: SLF001
+    assert state._activated_characters[0] == [card]  # noqa: SLF001
+
+
+def test_molthar_state_neighbor_actions_distinguish_portal_slots() -> None:
+    """Only the slot containing Irrlicht receives a neighboring activation action."""
+    game = pyspiel.load_game("python_portale_von_molthar")
+    state = game.new_initial_state()
+    golem = _character_index("golem_1")
+    irrlicht = _character_index("irrlicht_1")
+    state._portals[1] = [golem, irrlicht]  # noqa: SLF001
+    state._hands[0] = Counter({3: 3, 4: 2, 6: 1, 8: 1})  # noqa: SLF001
+    state._pearl_display = [1, 2, 3, 5]  # noqa: SLF001
+    state._character_display = [golem, irrlicht]  # noqa: SLF001
+
+    assert Action.ACTIVATE_NEIGHBOR_0 not in state.legal_actions()
+    assert Action.ACTIVATE_NEIGHBOR_1 in state.legal_actions()
+    assert state.action_to_string(0, Action.ACTIVATE_NEIGHBOR_1) == ("ActivateNeighbor:irrlicht_1")
+
+
+@pytest.mark.parametrize(
+    ("card_id", "hand"),
+    [
+        ("golem_1", Counter({4: 2, 6: 1, 8: 1})),
+        ("golem_2", Counter({1: 1, 3: 1, 5: 1, 7: 1})),
+    ],
+)
+def test_molthar_state_golem_grants_three_actions(
+    card_id: str,
+    hand: Counter[int],
+) -> None:
+    """Activating a Golem immediately adds three actions to the current turn."""
+    game = pyspiel.load_game("python_portale_von_molthar")
+    state = game.new_initial_state()
+    card = _character_index(card_id)
+    state._portals[0] = [card]  # noqa: SLF001
+    state._hands[0] = hand  # noqa: SLF001
+    state._pearl_display = [1, 2, 3, 5]  # noqa: SLF001
+    state._character_display = [card, card]  # noqa: SLF001
+
+    state.apply_action(Action.ACTIVATE_0)
+
+    assert state._actions_left == 5  # noqa: SLF001
+    assert state._activated_characters[0] == [card]  # noqa: SLF001
+    assert state.scores[0] == 2
 
 
 def test_molthar_state_discard_choice() -> None:

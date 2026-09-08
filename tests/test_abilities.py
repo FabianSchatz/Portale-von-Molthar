@@ -4,6 +4,7 @@ import pytest
 
 from portale_von_molthar.abilities import (
     AbilityTiming,
+    GainActionsAbility,
     PearlValueSubstitutionAbility,
     VirtualPearlAbility,
 )
@@ -44,3 +45,9 @@ def test_pearl_value_substitution_ability_rejects_invalid_values(
 def test_pearl_value_substitution_ability_defaults_to_during_turn() -> None:
     ability = PearlValueSubstitutionAbility(1, (8,))
     assert ability.timing is AbilityTiming.DURING_TURN
+
+
+@pytest.mark.parametrize("actions", [-1, 0])
+def test_gain_actions_ability_rejects_nonpositive_count(actions: int) -> None:
+    with pytest.raises(ValueError, match="at least one action"):
+        GainActionsAbility(actions)

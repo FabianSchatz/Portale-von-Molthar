@@ -2,8 +2,9 @@
 
 Simplifications with respect to the printed rules (see module constants):
 
-* The 14 green characters and blue characters that provide or reinterpret
-  pearl values are modelled; other red and blue abilities are not yet implemented.
+* The 14 green characters, Irrlicht and Golem red characters, and blue
+  characters that provide or reinterpret pearl values are modelled; other
+  red and blue abilities are not yet implemented.
 * Diamonds are tracked as a plain per-player counter rather than as physical
   character cards drawn from the deck. They can pay explicit requirements but
   cannot yet modify a pearl card's value (see RULES.md section 8).
@@ -27,6 +28,8 @@ import pyspiel
 
 from portale_von_molthar.abilities import (
     AbilityTiming,
+    GainActionsAbility,
+    NeighborActivationAbility,
     PearlValueSubstitutionAbility,
     VirtualPearlAbility,
 )
@@ -56,19 +59,24 @@ _CHAR_DISPLAY_SIZE: Final = 2
 _PORTAL_SLOTS: Final = 2
 _HAND_LIMIT: Final = 5
 _ACTIONS_PER_TURN: Final = 3
+_MAX_REMAINING_ACTIONS: Final = _ACTIONS_PER_TURN + sum(
+    character.copies * (character.ability.actions - 1)
+    for character in CHARACTERS
+    if isinstance(character.ability, GainActionsAbility)
+)
 _TARGET_POINTS: Final = 12
 # Safety net: the simplified game has no forced progress, so two players who
 # only ever "pass" would loop forever. Discards add up to three more nodes per
 # turn, so a random game needs noticeably more of them than the actions alone.
-_MAX_NODES: Final = 12000
+_MAX_NODES: Final = 20000
 
 
 class Action(enum.IntEnum):
     """The distinct player actions.
 
-    The first nine are turn actions, three of which are spent per normal turn.
-    Discard actions name a pearl value dropped at the end of a turn. Payment
-    actions have stable meanings and never consume an additional turn action.
+    Taking, refreshing, placing, and activating are turn actions. Discard
+    actions name a pearl value dropped at the end of a turn. Payment actions
+    have stable meanings and never consume an additional turn action.
     """
 
     TAKE_PEARL_0 = 0
@@ -120,6 +128,8 @@ class Action(enum.IntEnum):
     PAY_HAND_3_AS_7_RUMPELSTILTSKIN = 46
     PAY_HAND_3_AS_8_RUMPELSTILTSKIN = 47
     PAY_HAND_1_AS_8_PETER_PAN = 48
+    ACTIVATE_NEIGHBOR_0 = 49
+    ACTIVATE_NEIGHBOR_1 = 50
 
 
 _HAND_PAYMENT_ACTIONS: Final = {value: Action.PAY_HAND_1 + value - 1 for value in _PEARL_VALUES}
@@ -269,13 +279,19 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
             for other in range(_NUM_PLAYERS)
         ]
         paid = self._selected_payment_labels()
+        decision = self._pending_decision
+        payment_target = (
+            f"p{decision.target_owner}:{decision.target_slot}"
+            if isinstance(decision, PaymentDecision)
+            else "none"
+        )
         return (
             f"p{player} hand={hand} "
             f"pearls={self._pearl_display} "
             f"chars={[CHARACTERS[card].id for card in self._character_display]} "
             f"portals={portals} activated={activated} scores={self._scores} "
             f"diamonds={self._diamonds} to_move=p{self._cur_player} "
-            f"left={self._actions_left} paid={list(paid)}"
+            f"left={self._actions_left} payment_target={payment_target} paid={list(paid)}"
         )
 
     def observation_tensor(self, player: int) -> list[float]:
@@ -311,7 +327,7 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
         planes.extend(score / _TARGET_POINTS for score in self._scores)
         planes.extend(float(diamonds) for diamonds in self._diamonds)
         planes.extend(
-            1.0 if self._actions_left == step + 1 else 0.0 for step in range(_ACTIONS_PER_TURN)
+            1.0 if self._actions_left == step + 1 else 0.0 for step in range(_MAX_REMAINING_ACTIONS)
         )
         # Pending activation data is public. Printed and effective counts are
         # separate because abilities and diamonds may modify physical pearls.
@@ -362,6 +378,14 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
             character = CHARACTERS[card]
             if self._activation_plans(player, character):
                 actions.append(Action.ACTIVATE_0 + slot)
+        target_owner = (player + 1) % _NUM_PLAYERS
+        for slot, card in enumerate(self._portals[target_owner]):
+            character = CHARACTERS[card]
+            if isinstance(character.ability, NeighborActivationAbility) and self._activation_plans(
+                player,
+                character,
+            ):
+                actions.append(Action.ACTIVATE_NEIGHBOR_0 + slot)
         # A player is never stuck: refreshing an empty display is a legal pass.
         return sorted(actions) if actions else [int(Action.REFRESH_PEARLS)]
 
@@ -409,6 +433,11 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
         elif action <= Action.ACTIVATE_1:
             slot = action - Action.ACTIVATE_0
             label = f"Activate:{CHARACTERS[self._portals[player][slot]].id}"
+        elif Action.ACTIVATE_NEIGHBOR_0 <= action <= Action.ACTIVATE_NEIGHBOR_1:
+            target_owner = (player + 1) % _NUM_PLAYERS
+            slot = action - Action.ACTIVATE_NEIGHBOR_0
+            character = CHARACTERS[self._portals[target_owner][slot]]
+            label = f"ActivateNeighbor:{character.id}"
         elif action <= Action.DISCARD_8:
             value = action - Action.DISCARD_1 + 1
             label = f"Discard:{value}"
@@ -449,27 +478,36 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
                 self._character_display.pop(action - Action.TAKE_CHARACTER_0),
             )
         elif action <= Action.ACTIVATE_1:
-            self._activate(player, action - Action.ACTIVATE_0)
+            self._activate(player, player, action - Action.ACTIVATE_0)
+        elif Action.ACTIVATE_NEIGHBOR_0 <= action <= Action.ACTIVATE_NEIGHBOR_1:
+            target_owner = (player + 1) % _NUM_PLAYERS
+            self._activate(player, target_owner, action - Action.ACTIVATE_NEIGHBOR_0)
         else:
             message = f"action {action} is not a normal turn action"
             raise ValueError(message)
 
-    def _activate(self, player: int, slot: int) -> None:
-        """Start paying for the character in `slot` (RULES.md section 6.4).
+    def _activate(self, player: int, target_owner: int, slot: int) -> None:
+        """Start paying for a character on `target_owner`'s portal.
 
         The planner separates matching from mutation and preserves the source
         and effective value of every resource. A pending decision is only
         created when more than one complete plan is possible.
         """
-        character = CHARACTERS[self._portals[player][slot]]
+        character = CHARACTERS[self._portals[target_owner][slot]]
+        if player != target_owner and not isinstance(
+            character.ability,
+            NeighborActivationAbility,
+        ):
+            message = f"cannot activate {character.id} from another player's portal"
+            raise ValueError(message)
         plans = self._activation_plans(player, character)
         if not plans:
             message = f"cannot activate {character.id} with the current hand"
             raise ValueError(message)
-        decision = PaymentDecision(player, player, slot, plans)
+        decision = PaymentDecision(player, target_owner, slot, plans)
         plan = decision.resolved_plan
         if plan is not None:
-            self._resolve_activation(player, player, slot, plan)
+            self._resolve_activation(player, target_owner, slot, plan)
             return
         self._pending_decision = decision
 
@@ -579,6 +617,8 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
         self._activated_characters[player].append(character_index)
         self._scores[player] += character.points
         self._diamonds[player] += character.diamonds - plan.diamonds_spent
+        if isinstance(character.ability, GainActionsAbility):
+            self._actions_left += character.ability.actions
 
     @staticmethod
     def _payment_action(payment: PearlPayment) -> int:
@@ -757,7 +797,7 @@ class MoltharGame(pyspiel.Game):  # type: ignore[misc]
             + _NUM_PLAYERS * len(CHARACTERS)  # activated-character counts
             + _NUM_PLAYERS  # scores
             + _NUM_PLAYERS  # diamonds
-            + _ACTIONS_PER_TURN
+            + _MAX_REMAINING_ACTIONS
             + 1  # whether a payment decision is pending
             + _NUM_PLAYERS  # owner of its target character
             + _PORTAL_SLOTS  # portal slot of a half-paid activation

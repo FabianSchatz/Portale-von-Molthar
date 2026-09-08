@@ -23,6 +23,28 @@ class AbilityTiming(enum.StrEnum):
 
 
 @dataclass(frozen=True, slots=True)
+class GainActionsAbility:
+    """Immediately grant additional actions when the character is activated.
+
+    Attributes:
+        actions: Number of actions added to the current turn.
+    """
+
+    actions: int
+
+    def __post_init__(self) -> None:
+        """Validate the number of granted actions."""
+        if self.actions <= 0:
+            message = "an action-granting ability must add at least one action"
+            raise ValueError(message)
+
+
+@dataclass(frozen=True, slots=True)
+class NeighborActivationAbility:
+    """Allow neighboring players to activate this character from its owner's portal."""
+
+
+@dataclass(frozen=True, slots=True)
 class VirtualPearlAbility:
     """Provide one virtual pearl with one of the listed effective values.
 
@@ -88,4 +110,9 @@ class PearlValueSubstitutionAbility:
             raise TypeError(message)
 
 
-CharacterAbility: TypeAlias = VirtualPearlAbility | PearlValueSubstitutionAbility
+CharacterAbility: TypeAlias = (
+    GainActionsAbility
+    | NeighborActivationAbility
+    | VirtualPearlAbility
+    | PearlValueSubstitutionAbility
+)

@@ -6,11 +6,14 @@ from typing import Final
 from portale_von_molthar.abilities import (
     AbilityType,
     CharacterAbility,
+    GainActionsAbility,
+    NeighborActivationAbility,
     PearlValueSubstitutionAbility,
     VirtualPearlAbility,
 )
 from portale_von_molthar.requirements import (
     AllOf,
+    AnyOf,
     ExactValues,
     FixedCountSum,
     Parity,
@@ -65,9 +68,15 @@ class Character:
         ):
             message = "persistent pearl abilities must belong to blue characters"
             raise ValueError(message)
+        if (
+            isinstance(self.ability, (GainActionsAbility, NeighborActivationAbility))
+            and self.ability_type is not AbilityType.RED
+        ):
+            message = "one-time abilities must belong to red characters"
+            raise ValueError(message)
 
 
-# Green cards and blue virtual-pearl providers from docs/character_cards.md.
+# Implemented cards from docs/character_cards.md.
 CHARACTERS: Final = (
     Character("goblin", SameValue(2), points=1, copies=3),
     Character("fluffy", SameValue(3), points=2, copies=2),
@@ -107,6 +116,38 @@ CHARACTERS: Final = (
     Character("terminator", FixedCountSum(3, 20), points=2, copies=1),
     Character("unicorn", ExactValues((1, 2, 3, 4)), points=1, copies=1, diamonds=2),
     Character("trump", ExactValues((7, 7, 8, 8)), points=3, copies=2, diamonds=1),
+    Character(
+        "irrlicht_1",
+        AnyOf((ExactValues((3, 3, 3)), ExactValues((6, 6, 6)))),
+        points=3,
+        copies=1,
+        ability_type=AbilityType.RED,
+        ability=NeighborActivationAbility(),
+    ),
+    Character(
+        "irrlicht_2",
+        AnyOf((ExactValues((4, 4, 4)), ExactValues((5, 5, 5)))),
+        points=3,
+        copies=1,
+        ability_type=AbilityType.RED,
+        ability=NeighborActivationAbility(),
+    ),
+    Character(
+        "golem_1",
+        ExactValues((4, 4, 6, 8)),
+        points=2,
+        copies=1,
+        ability_type=AbilityType.RED,
+        ability=GainActionsAbility(3),
+    ),
+    Character(
+        "golem_2",
+        ExactValues((1, 3, 5, 7)),
+        points=2,
+        copies=1,
+        ability_type=AbilityType.RED,
+        ability=GainActionsAbility(3),
+    ),
     *(
         Character(
             f"barbarian_{value}",
