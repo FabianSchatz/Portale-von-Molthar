@@ -6,9 +6,13 @@ from typing import Final
 from portale_von_molthar.abilities import (
     AbilityType,
     CharacterAbility,
+    DiscardPortalAbility,
     GainActionsAbility,
+    KeepPearlAbility,
     NeighborActivationAbility,
+    NextPlayerActionAbility,
     PearlValueSubstitutionAbility,
+    StealPearlAbility,
     VirtualPearlAbility,
 )
 from portale_von_molthar.requirements import (
@@ -69,7 +73,17 @@ class Character:
             message = "persistent pearl abilities must belong to blue characters"
             raise ValueError(message)
         if (
-            isinstance(self.ability, (GainActionsAbility, NeighborActivationAbility))
+            isinstance(
+                self.ability,
+                (
+                    GainActionsAbility,
+                    NeighborActivationAbility,
+                    KeepPearlAbility,
+                    NextPlayerActionAbility,
+                    StealPearlAbility,
+                    DiscardPortalAbility,
+                ),
+            )
             and self.ability_type is not AbilityType.RED
         ):
             message = "one-time abilities must belong to red characters"
@@ -133,6 +147,22 @@ CHARACTERS: Final = (
         ability=NeighborActivationAbility(),
     ),
     Character(
+        "puss_in_boots",
+        ExactValues((3, 4, 5)),
+        points=1,
+        copies=1,
+        ability_type=AbilityType.RED,
+        ability=KeepPearlAbility(),
+    ),
+    Character(
+        "dementor",
+        AllOf((SameValue(2), SameValue(2))),
+        points=2,
+        copies=1,
+        ability_type=AbilityType.RED,
+        ability=NextPlayerActionAbility(),
+    ),
+    Character(
         "golem_1",
         ExactValues((4, 4, 6, 8)),
         points=2,
@@ -147,6 +177,22 @@ CHARACTERS: Final = (
         copies=1,
         ability_type=AbilityType.RED,
         ability=GainActionsAbility(3),
+    ),
+    Character(
+        "tinkerbell",
+        ExactValues((5, 6, 7)),
+        points=1,
+        copies=2,
+        ability_type=AbilityType.RED,
+        ability=StealPearlAbility(),
+    ),
+    Character(
+        "medusa",
+        FixedCountSum(3, 7),
+        points=1,
+        copies=2,
+        ability_type=AbilityType.RED,
+        ability=DiscardPortalAbility(),
     ),
     *(
         Character(

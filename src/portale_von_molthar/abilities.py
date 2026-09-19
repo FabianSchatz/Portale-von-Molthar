@@ -45,6 +45,26 @@ class NeighborActivationAbility:
 
 
 @dataclass(frozen=True, slots=True)
+class KeepPearlAbility:
+    """Allow one physical pearl used for activation to remain in hand."""
+
+
+@dataclass(frozen=True, slots=True)
+class NextPlayerActionAbility:
+    """Give the next player one additional action on their next turn."""
+
+
+@dataclass(frozen=True, slots=True)
+class StealPearlAbility:
+    """Take one chosen pearl from the next player's hand."""
+
+
+@dataclass(frozen=True, slots=True)
+class DiscardPortalAbility:
+    """Discard one character from the next player's portal."""
+
+
+@dataclass(frozen=True, slots=True)
 class VirtualPearlAbility:
     """Provide one virtual pearl with one of the listed effective values.
 
@@ -113,6 +133,10 @@ class PearlValueSubstitutionAbility:
 CharacterAbility: TypeAlias = (
     GainActionsAbility
     | NeighborActivationAbility
+    | KeepPearlAbility
+    | NextPlayerActionAbility
+    | StealPearlAbility
+    | DiscardPortalAbility
     | VirtualPearlAbility
     | PearlValueSubstitutionAbility
 )

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import StrEnum
 from typing import TYPE_CHECKING, TypeAlias
 
 if TYPE_CHECKING:
@@ -87,8 +88,34 @@ class PaymentDecision:
         )
 
 
-# Extend this union with typed red and blue ability decisions as they are implemented.
-PendingDecision: TypeAlias = PaymentDecision
+class RedChoice(StrEnum):
+    """Choice required immediately after activating a red character."""
+
+    KEEP_PEARL = "keep_pearl"
+    STEAL_TARGET = "steal_target"
+    STEAL_PEARL = "steal_pearl"
+    DISCARD_TARGET = "discard_target"
+    DISCARD_PORTAL = "discard_portal"
+
+
+@dataclass(frozen=True, slots=True)
+class RedAbilityDecision:
+    """A red ability choice made by the activating player.
+
+    Attributes:
+        actor: Player who activated the character.
+        choice: Effect awaiting a choice.
+        options: Available player IDs, pearl values, or portal slots; zero means keep none.
+        target_player: Selected opponent after a target player choice.
+    """
+
+    actor: int
+    choice: RedChoice
+    options: tuple[int, ...]
+    target_player: int | None = None
+
+
+PendingDecision: TypeAlias = PaymentDecision | RedAbilityDecision
 
 
 def _option_key(option: PearlPayment) -> tuple[object, ...]:

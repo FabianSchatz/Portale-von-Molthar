@@ -13,8 +13,8 @@ from portale_von_molthar.requirements import AnyOf, ExactValues
 
 def test_character_data_matches_docs() -> None:
     """`CHARACTERS` must contain all currently implemented cards."""
-    assert len(CHARACTERS) == 29
-    assert sum(character.copies for character in CHARACTERS) == 39
+    assert len(CHARACTERS) == 33
+    assert sum(character.copies for character in CHARACTERS) == 45
     assert len({character.id for character in CHARACTERS}) == len(CHARACTERS)
 
 

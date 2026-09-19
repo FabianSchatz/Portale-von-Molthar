@@ -7,7 +7,15 @@ import pyspiel
 import pytest
 
 from portale_von_molthar.cards import CHARACTERS
-from portale_von_molthar.molthar import _HAND_LIMIT, _PEARL_COPIES, _PEARL_VALUES, Action
+from portale_von_molthar.decisions import RedChoice
+from portale_von_molthar.molthar import (
+    _HAND_LIMIT,
+    _MAX_NODES,
+    _NUM_PLAYERS,
+    _PEARL_COPIES,
+    _PEARL_VALUES,
+    Action,
+)
 
 _TOTAL_PEARLS = len(_PEARL_VALUES) * _PEARL_COPIES
 
@@ -51,17 +59,18 @@ def test_molthar_game_random_playthrough(seed: int, *, auto_discard: bool) -> No
     state = _play_random_game(seed, auto_discard=auto_discard)
     assert state.is_terminal()
     assert sum(state.returns()) == 0.0
-    # Random play must actually finish by scoring, not by hitting the node cap.
-    assert max(state.scores) >= 12
-    # Hands are trimmed at the end of every turn.
-    for hand in state._hands:  # noqa: SLF001
-        assert hand.total() <= _HAND_LIMIT
+    # Some random players fill their portals with cards they cannot activate.
+    assert max(state.scores) >= 12 or state._nodes == _MAX_NODES  # noqa: SLF001
+    # Scoring ends at a turn boundary; the node cap can interrupt a turn.
+    if max(state.scores) >= 12:
+        for hand in state._hands:  # noqa: SLF001
+            assert hand.total() <= _HAND_LIMIT
 
 
 def test_molthar_game_registration() -> None:
     game = pyspiel.load_game("python_portale_von_molthar")
     assert game.num_players() == 2
-    assert game.num_distinct_actions() == 51
+    assert game.num_distinct_actions() == 70
     state = game.new_initial_state()
     assert state.is_chance_node()
     assert len(state.observation_tensor(0)) == game.observation_tensor_shape()[0]
@@ -185,6 +194,99 @@ def test_molthar_state_golem_grants_three_actions(
     assert state._actions_left == 5  # noqa: SLF001
     assert state._activated_characters[0] == [card]  # noqa: SLF001
     assert state.scores[0] == 2
+
+
+def test_molthar_state_puss_in_boots_keeps_paid_pearl() -> None:
+    """Puss can return one used physical pearl to the player's hand."""
+    state = pyspiel.load_game("python_portale_von_molthar").new_initial_state()
+    card = _character_index("puss_in_boots")
+    state._portals[0] = [card]  # noqa: SLF001
+    state._hands[0] = Counter({3: 1, 4: 1, 5: 1})  # noqa: SLF001
+    state._pearl_display = [1, 2, 6, 8]  # noqa: SLF001
+    state._character_display = [card, card]  # noqa: SLF001
+
+    state.apply_action(Action.ACTIVATE_0)
+    assert set(state.legal_actions()) == {
+        Action.KEEP_NONE,
+        Action.KEEP_3,
+        Action.KEEP_4,
+        Action.KEEP_5,
+    }
+    state.apply_action(Action.KEEP_4)
+    assert state._hands[0] == Counter({4: 1})  # noqa: SLF001
+    assert state._pearl_discard == Counter({3: 1, 5: 1})  # noqa: SLF001
+    assert state._actions_left == 2  # noqa: SLF001
+
+
+def test_molthar_state_dementor_bonuses_next_turn() -> None:
+    """Dementor gives the next player an extra action on their next turn."""
+    state = pyspiel.load_game("python_portale_von_molthar").new_initial_state()
+    card = _character_index("dementor")
+    state._portals[0] = [card]  # noqa: SLF001
+    state._hands[0] = Counter({2: 2, 4: 2})  # noqa: SLF001
+    state._pearl_display = [1, 3, 5, 8]  # noqa: SLF001
+    state._character_display = [card, card]  # noqa: SLF001
+    state._actions_left = 1  # noqa: SLF001
+
+    state.apply_action(Action.ACTIVATE_0)
+    assert state.current_player() == 1
+    assert state._actions_left == 4  # noqa: SLF001
+    assert state._next_turn_bonus[1] == 0  # noqa: SLF001
+
+
+def test_molthar_state_tinkerbell_steals_visible_choice() -> None:
+    """Only Tinkerbell's actor sees the hand and chooses a card to take."""
+    state = pyspiel.load_game("python_portale_von_molthar").new_initial_state()
+    card = _character_index("tinkerbell")
+    state._portals[0] = [card]  # noqa: SLF001
+    state._hands[0] = Counter({5: 1, 6: 1, 7: 1})  # noqa: SLF001
+    state._hands[1] = Counter({2: 1, 8: 1})  # noqa: SLF001
+    state._pearl_display = [1, 3, 4, 8]  # noqa: SLF001
+    state._character_display = [card, card]  # noqa: SLF001
+
+    state.apply_action(Action.ACTIVATE_0)
+    assert state.legal_actions() == [Action.TARGET_PLAYER_1]
+    state.apply_action(Action.TARGET_PLAYER_1)
+    assert set(state.legal_actions()) == {Action.STEAL_2, Action.STEAL_8}
+    assert "revealed_hand=[2, 8]" in state.observation_string(0)
+    assert "revealed_hand=None" in state.observation_string(1)
+    tail = len(RedChoice)
+    assert state.observation_tensor(0)[-tail - 8 : -tail] == [
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+    ]
+    assert state.observation_tensor(1)[-tail - 8 : -tail] == [0.0] * 8
+    state.apply_action(Action.STEAL_8)
+    assert state._hands[0] == Counter({8: 1})  # noqa: SLF001
+    assert state._hands[1] == Counter({2: 1})  # noqa: SLF001
+
+
+def test_molthar_state_medusa_discards_opposing_portal_card() -> None:
+    """Medusa chooses which opposing portal card is discarded."""
+    state = pyspiel.load_game("python_portale_von_molthar").new_initial_state()
+    card = _character_index("medusa")
+    goblin = _character_index("goblin")
+    fluffy = _character_index("fluffy")
+    state._portals[0] = [card]  # noqa: SLF001
+    state._portals[1] = [goblin, fluffy]  # noqa: SLF001
+    state._hands[0] = Counter({1: 2, 5: 1})  # noqa: SLF001
+    state._pearl_display = [2, 3, 4, 8]  # noqa: SLF001
+    state._character_display = [card, card]  # noqa: SLF001
+
+    state.apply_action(Action.ACTIVATE_0)
+    assert state.legal_actions() == [Action.TARGET_PLAYER_1]
+    state.apply_action(Action.TARGET_PLAYER_1)
+    assert set(state.legal_actions()) == {Action.DISCARD_PORTAL_0, Action.DISCARD_PORTAL_1}
+    state.apply_action(Action.DISCARD_PORTAL_1)
+    assert state._portals[1] == [goblin]  # noqa: SLF001
+    assert state._character_discard[fluffy] == 1  # noqa: SLF001
+    assert len(state.observation_tensor(0)) == state.get_game().observation_tensor_shape()[0]
 
 
 def test_molthar_state_discard_choice() -> None:
@@ -412,7 +514,8 @@ def test_molthar_state_observation_tracks_selected_virtual_source() -> None:
     state.apply_action(Action.ACTIVATE_0)
     state.apply_action(Action.USE_BARBARIAN_1)
     observation = state.observation_tensor(0)
-    virtual_sources = observation[-(len(CHARACTERS) + 1) : -1]
+    tail = 1 + _NUM_PLAYERS + 8 + len(RedChoice)
+    virtual_sources = observation[-(len(CHARACTERS) + tail) : -tail]
     assert virtual_sources[barbarian_one] == 1.0
     assert sum(virtual_sources) == 1.0
     assert "paid=['UseVirtual:barbarian_1As1']" in state.observation_string(0)
