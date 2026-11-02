@@ -5,7 +5,10 @@ import pytest
 from portale_von_molthar.abilities import (
     AbilityTiming,
     GainActionsAbility,
+    HandLimitAbility,
+    PearlToDiamondAbility,
     PearlValueSubstitutionAbility,
+    TurnActionsAbility,
     VirtualPearlAbility,
 )
 
@@ -51,3 +54,21 @@ def test_pearl_value_substitution_ability_defaults_to_during_turn() -> None:
 def test_gain_actions_ability_rejects_nonpositive_count(actions: int) -> None:
     with pytest.raises(ValueError, match="at least one action"):
         GainActionsAbility(actions)
+
+
+@pytest.mark.parametrize("actions", [-1, 0])
+def test_turn_actions_ability_rejects_nonpositive_count(actions: int) -> None:
+    with pytest.raises(ValueError, match="at least one action"):
+        TurnActionsAbility(actions)
+
+
+@pytest.mark.parametrize("bonus", [-1, 0])
+def test_hand_limit_ability_rejects_nonpositive_bonus(bonus: int) -> None:
+    with pytest.raises(ValueError, match="at least one card"):
+        HandLimitAbility(bonus)
+
+
+@pytest.mark.parametrize("printed_value", [0, 9])
+def test_pearl_to_diamond_ability_rejects_invalid_value(printed_value: int) -> None:
+    with pytest.raises(ValueError, match="convertible pearl value"):
+        PearlToDiamondAbility(printed_value)

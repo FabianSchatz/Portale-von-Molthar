@@ -1,13 +1,21 @@
-"""Typed pending player decisions that interrupt the normal turn flow."""
+"""Typed pending steps that interrupt the normal turn flow.
+
+A step is either a decision made by a player or a chance draw resolved by
+the environment. At most one step is pending at any time.
+"""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import TYPE_CHECKING, TypeAlias
+from typing import TYPE_CHECKING, Final, TypeAlias
+
+import pyspiel
 
 if TYPE_CHECKING:
     from portale_von_molthar.payments import PaymentPlan, PearlPayment
+
+_CHANCE: Final = int(pyspiel.PlayerId.CHANCE)
 
 
 @dataclass(frozen=True, slots=True)
@@ -115,7 +123,74 @@ class RedAbilityDecision:
     target_player: int | None = None
 
 
-PendingDecision: TypeAlias = PaymentDecision | RedAbilityDecision
+class BlueChoice(StrEnum):
+    """Optional blue ability offered before or after the owner's actions."""
+
+    REDRAW_HAND = "redraw_hand"
+    SWAP_PORTAL = "swap_portal"
+
+
+@dataclass(frozen=True, slots=True)
+class BlueAbilityDecision:
+    """A turn-boundary blue ability choice that never consumes a turn action.
+
+    The available options follow directly from the public state (portal and
+    character display for a swap), so they are not stored here.
+
+    Attributes:
+        actor: Player owning the activated blue character.
+        choice: Ability awaiting a choice.
+    """
+
+    actor: int
+    choice: BlueChoice
+
+
+@dataclass(frozen=True, slots=True)
+class HandDrawStep:
+    """Chance draws refilling a hand after a Reaper redraw.
+
+    Each draw replaces the step with one whose ``remaining`` is one lower.
+
+    Attributes:
+        player: Player whose hand receives the drawn pearls.
+        remaining: Pearls still to be drawn.
+    """
+
+    player: int
+    remaining: int
+
+    def __post_init__(self) -> None:
+        """Validate that at least one draw remains."""
+        if self.remaining <= 0:
+            message = "a hand-draw step needs at least one remaining draw"
+            raise ValueError(message)
+
+    @property
+    def actor(self) -> int:
+        """Return the OpenSpiel chance player, who resolves this step."""
+        return _CHANCE
+
+
+@dataclass(frozen=True, slots=True)
+class PeekStep:
+    """Chance draw privately revealing the top character card (Dumbledore).
+
+    Attributes:
+        player: Player who sees the revealed card.
+    """
+
+    player: int
+
+    @property
+    def actor(self) -> int:
+        """Return the OpenSpiel chance player, who resolves this step."""
+        return _CHANCE
+
+
+PendingStep: TypeAlias = (
+    PaymentDecision | RedAbilityDecision | BlueAbilityDecision | HandDrawStep | PeekStep
+)
 
 
 def _option_key(option: PearlPayment) -> tuple[object, ...]:

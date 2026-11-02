@@ -1,20 +1,36 @@
 """Tests for structured character-card data."""
 
+import pytest
+
 from portale_von_molthar.abilities import (
     AbilityType,
+    CharacterAbility,
+    DiamondDecreaseAbility,
     GainActionsAbility,
+    HandLimitAbility,
     NeighborActivationAbility,
+    PearlToDiamondAbility,
     PearlValueSubstitutionAbility,
+    PeekCharacterDeckAbility,
+    PortalMarketSwapAbility,
+    RedrawHandAbility,
+    TurnActionsAbility,
     VirtualPearlAbility,
 )
 from portale_von_molthar.cards import CHARACTERS
-from portale_von_molthar.requirements import AnyOf, ExactValues
+from portale_von_molthar.requirements import (
+    AnyOf,
+    ConsecutiveValues,
+    ExactValues,
+    Requirement,
+    VariableCountSum,
+)
 
 
 def test_character_data_matches_docs() -> None:
-    """`CHARACTERS` must contain all currently implemented cards."""
-    assert len(CHARACTERS) == 33
-    assert sum(character.copies for character in CHARACTERS) == 45
+    """`CHARACTERS` must contain all 54 base-game character cards."""
+    assert len(CHARACTERS) == 40
+    assert sum(character.copies for character in CHARACTERS) == 54
     assert len({character.id for character in CHARACTERS}) == len(CHARACTERS)
 
 
@@ -67,8 +83,44 @@ def test_character_data_models_irrlicht_cards() -> None:
 
 def test_character_data_models_golem_cards() -> None:
     cards = {character.id: character for character in CHARACTERS}
-    assert cards["golem_1"].requirement == ExactValues((4, 4, 6, 8))
+    assert cards["golem_1"].requirement == ExactValues((2, 4, 6, 8))
     assert cards["golem_2"].requirement == ExactValues((1, 3, 5, 7))
     for card_id in ("golem_1", "golem_2"):
         assert cards[card_id].ability_type is AbilityType.RED
         assert cards[card_id].ability == GainActionsAbility(3)
+
+
+@pytest.mark.parametrize(
+    ("card_id", "requirement", "points", "copies", "diamonds", "ability"),
+    [
+        ("reaper", ExactValues((1, 8)), 1, 1, 0, RedrawHandAbility()),
+        (
+            "little_red_riding_hood",
+            ExactValues((4, 5, 6, 7, 8)),
+            1,
+            1,
+            0,
+            TurnActionsAbility(1),
+        ),
+        ("amazon", ExactValues((3, 5, 7)), 1, 1, 1, DiamondDecreaseAbility()),
+        ("snow_white", ExactValues((2,)), 0, 1, 1, PearlToDiamondAbility(2)),
+        ("mad_hatter", ConsecutiveValues(5), 2, 1, 0, PortalMarketSwapAbility()),
+        ("dumbledore", ConsecutiveValues(3), 1, 1, 0, PeekCharacterDeckAbility()),
+        ("flying_monkey", VariableCountSum(10), 1, 3, 0, HandLimitAbility(1)),
+    ],
+)
+def test_character_data_models_turn_and_resource_blue_cards(  # noqa: PLR0913
+    card_id: str,
+    requirement: Requirement,
+    points: int,
+    copies: int,
+    diamonds: int,
+    ability: CharacterAbility,
+) -> None:
+    character = next(character for character in CHARACTERS if character.id == card_id)
+    assert character.requirement == requirement
+    assert character.points == points
+    assert character.copies == copies
+    assert character.diamonds == diamonds
+    assert character.ability_type is AbilityType.BLUE
+    assert character.ability == ability

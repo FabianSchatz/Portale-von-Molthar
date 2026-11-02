@@ -41,7 +41,7 @@ All cards in this section have no special ability.
 | irrlicht_2 | 1 | three 4s OR three 5s | 3 | 0 | Both neighboring players may also activate this character while it is on the owner's portal and thereby gain its points instead. |
 | puss_in_boots | 1 | 3, 4, 5 | 1 | 0 | When activating this character, the player may keep one of the three pearl cards used for the activation instead of discarding it. |
 | dementor | 1 | two pairs | 2 | 0 | The next player receives one additional action on their next turn. |
-| golem_1 | 1 | 4, 4, 6, 8 | 2 | 0 | Immediately gain 3 additional actions. |
+| golem_1 | 1 | 2, 4, 6, 8 | 2 | 0 | Immediately gain 3 additional actions. |
 | golem_2 | 1 | 1, 3, 5, 7 | 2 | 0 | Immediately gain 3 additional actions. |
 | tinkerbell | 2 | 5, 6, 7 | 1 | 0 | Look at another player's pearl cards and take one card of your choice. |
 | medusa | 2 | exactly 3 cards with a total value of 7 | 1 | 0 | Discard one character from another player's portal. |
@@ -75,11 +75,11 @@ For blue cards, the timing of the ability is relevant:
 | little_red_riding_hood | 1 | 4, 5, 6, 7, 8 | 1 | 0 | persistent | The player receives one additional action on every turn. |
 | fuchur | 1 | 1, 1, 1, 1 | 0 | 0 | during_turn | Provides one wildcard virtual pearl that may represent any pearl value for character activations. It may be used for any number of activations during the turn. |
 | amazon | 1 | 3, 5, 7 | 1 | 1 | during_turn | Diamonds may modify a pearl card by either +1 or -1 instead of only +1. |
-| snow_white | 1 | 2 | 0 | 1 | during_turn | A pearl card with value 2 may be converted into one diamond. |
+| snow_white | 1 | 2 | 0 | 1 | during_turn | A pearl card with value 2 may be converted into one diamond, this can be done multiple times per turn. |
 | mad_hatter | 1 | sequence of 5 consecutive pearl values | 2 | 0 | before_turn | Before the player's turn, one character on the player's own portal may be exchanged with one face-up character from the character market. |
 | dumbledore | 1 | sequence of 3 consecutive pearl values | 1 | 0 | before_turn | Before the player's turn, the player may look at the top card of the character draw deck without spending an action. |
 | phoenix | 2 | 1, 2 | 0 | 0 | during_turn | Provides one virtual pearl of value 8 for character activations. |
-| flying_monkey | 3 | any number of pearl cards with a total value of 10 | 1 | 0 | persistent | The player's end-of-turn pearl hand limit is increased from 5 to 6. |
+| flying_monkey | 3 | any number of pearl cards with a total value of 10 | 1 | 0 | persistent | The player's end-of-turn pearl hand limit is increased by one (initially from 5 to 6). |
 
 Total cards in this section: **21**
 

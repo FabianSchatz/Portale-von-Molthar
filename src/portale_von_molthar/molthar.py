@@ -2,13 +2,16 @@
 
 Simplifications with respect to the printed rules (see module constants):
 
-* The 14 green and all red characters are modelled, along with blue characters
-  that provide or reinterpret pearl values; other blue abilities remain.
+* All 54 character cards are modelled. Because characters can only be taken
+  from the face-up display, Dumbledore's peek only reveals which card refills
+  the character display next.
 * Diamonds are tracked as a plain per-player counter rather than as physical
-  character cards drawn from the deck. They can pay explicit requirements but
-  cannot yet modify a pearl card's value (see RULES.md section 8).
-* Pearl cards can only be taken from the face-up display, never blind from the
-  draw pile.
+  character cards drawn from the deck. A diamond pays an explicit requirement
+  or raises one paid physical pearl by 1 (Amazon also allows lowering it by 1).
+  A pearl already reinterpreted by Rumpelstiltskin or Peter Pan cannot also be
+  diamond-modified.
+* Pearl and character cards can only be taken from the face-up displays, never
+  blind from the draw piles.
 * Going over the hand limit is resolved by the player, who picks one pearl
   value to drop per decision node at the end of the turn; loading the game
   with ``auto_discard=true`` drops them by a built-in heuristic instead.
@@ -21,25 +24,36 @@ Importing this module registers the game under the short name
 
 import enum
 from collections import Counter
-from typing import Any, Final
+from typing import Any, Final, TypeVar
 
 import pyspiel
 
 from portale_von_molthar.abilities import (
     AbilityTiming,
+    DiamondDecreaseAbility,
     DiscardPortalAbility,
     GainActionsAbility,
+    HandLimitAbility,
     KeepPearlAbility,
     NeighborActivationAbility,
     NextPlayerActionAbility,
+    PearlToDiamondAbility,
     PearlValueSubstitutionAbility,
+    PeekCharacterDeckAbility,
+    PortalMarketSwapAbility,
+    RedrawHandAbility,
     StealPearlAbility,
+    TurnActionsAbility,
     VirtualPearlAbility,
 )
 from portale_von_molthar.cards import CHARACTERS, Character
 from portale_von_molthar.decisions import (
+    BlueAbilityDecision,
+    BlueChoice,
+    HandDrawStep,
     PaymentDecision,
-    PendingDecision,
+    PeekStep,
+    PendingStep,
     RedAbilityDecision,
     RedChoice,
 )
@@ -74,6 +88,11 @@ _MAX_REMAINING_ACTIONS: Final = (
         for character in CHARACTERS
         if isinstance(character.ability, GainActionsAbility)
     )
+    + sum(
+        character.copies * character.ability.actions
+        for character in CHARACTERS
+        if isinstance(character.ability, TurnActionsAbility)
+    )
     + 1
 )  # Dementor can add one action to the next player's turn.
 _TARGET_POINTS: Final = 12
@@ -81,6 +100,7 @@ _TARGET_POINTS: Final = 12
 # only ever "pass" would loop forever. Discards add up to three more nodes per
 # turn, so a random game needs noticeably more of them than the actions alone.
 _MAX_NODES: Final = 20000
+_AbilityT = TypeVar("_AbilityT")
 
 
 class Action(enum.IntEnum):
@@ -88,7 +108,10 @@ class Action(enum.IntEnum):
 
     Taking, refreshing, placing, and activating are turn actions. Discard
     actions name a pearl value dropped at the end of a turn. Payment actions
-    have stable meanings and never consume an additional turn action.
+    have stable meanings and never consume an additional turn action. Pearl
+    conversion and the Reaper and Mad Hatter choices are free moves.
+    ``MAD_HATTER_SWAP_<portal>_<display>`` exchanges a portal slot with a
+    character-display slot.
     """
 
     TAKE_PEARL_0 = 0
@@ -161,6 +184,28 @@ class Action(enum.IntEnum):
     TARGET_PLAYER_2 = 67
     TARGET_PLAYER_3 = 68
     TARGET_PLAYER_4 = 69
+    PAY_HAND_1_PLUS_DIAMOND = 70
+    PAY_HAND_2_PLUS_DIAMOND = 71
+    PAY_HAND_3_PLUS_DIAMOND = 72
+    PAY_HAND_4_PLUS_DIAMOND = 73
+    PAY_HAND_5_PLUS_DIAMOND = 74
+    PAY_HAND_6_PLUS_DIAMOND = 75
+    PAY_HAND_7_PLUS_DIAMOND = 76
+    PAY_HAND_2_MINUS_DIAMOND_AMAZON = 77
+    PAY_HAND_3_MINUS_DIAMOND_AMAZON = 78
+    PAY_HAND_4_MINUS_DIAMOND_AMAZON = 79
+    PAY_HAND_5_MINUS_DIAMOND_AMAZON = 80
+    PAY_HAND_6_MINUS_DIAMOND_AMAZON = 81
+    PAY_HAND_7_MINUS_DIAMOND_AMAZON = 82
+    PAY_HAND_8_MINUS_DIAMOND_AMAZON = 83
+    CONVERT_2_TO_DIAMOND_SNOW_WHITE = 84
+    REAPER_KEEP_HAND = 85
+    REAPER_REDRAW_HAND = 86
+    MAD_HATTER_SKIP = 87
+    MAD_HATTER_SWAP_0_0 = 88
+    MAD_HATTER_SWAP_0_1 = 89
+    MAD_HATTER_SWAP_1_0 = 90
+    MAD_HATTER_SWAP_1_1 = 91
 
 
 _HAND_PAYMENT_ACTIONS: Final = {value: Action.PAY_HAND_1 + value - 1 for value in _PEARL_VALUES}
@@ -169,7 +214,7 @@ _VIRTUAL_PAYMENT_ACTIONS: Final = {
     **{("fuchur", value): Action.USE_FUCHUR_AS_1 + value - 1 for value in _PEARL_VALUES},
     ("phoenix", 8): Action.USE_PHOENIX_AS_8,
 }
-_SUBSTITUTED_PAYMENT_ACTIONS: Final = {
+_SUBSTITUTED_PAYMENT_ACTIONS: Final[dict[tuple[str | None, int, int], int]] = {
     ("rumpelstiltskin", 3, 1): Action.PAY_HAND_3_AS_1_RUMPELSTILTSKIN,
     ("rumpelstiltskin", 3, 2): Action.PAY_HAND_3_AS_2_RUMPELSTILTSKIN,
     ("rumpelstiltskin", 3, 4): Action.PAY_HAND_3_AS_4_RUMPELSTILTSKIN,
@@ -178,6 +223,21 @@ _SUBSTITUTED_PAYMENT_ACTIONS: Final = {
     ("rumpelstiltskin", 3, 7): Action.PAY_HAND_3_AS_7_RUMPELSTILTSKIN,
     ("rumpelstiltskin", 3, 8): Action.PAY_HAND_3_AS_8_RUMPELSTILTSKIN,
     ("peter_pan", 1, 8): Action.PAY_HAND_1_AS_8_PETER_PAN,
+}
+# Keys are (decreasing ability or None for the base +1, printed value, effective value).
+_DIAMOND_PAYMENT_ACTIONS: Final[dict[tuple[str | None, int, int], int]] = {
+    **{
+        (None, value, value + 1): Action.PAY_HAND_1_PLUS_DIAMOND + value - 1
+        for value in range(1, 8)
+    },
+    **{
+        ("amazon", value, value - 1): Action.PAY_HAND_2_MINUS_DIAMOND_AMAZON + value - 2
+        for value in range(2, 9)
+    },
+}
+_CONVERSION_ACTIONS: Final = {("snow_white", 2): Action.CONVERT_2_TO_DIAMOND_SNOW_WHITE}
+_CONVERSION_KEYS: Final[dict[int, tuple[str, int]]] = {
+    action: key for key, action in _CONVERSION_ACTIONS.items()
 }
 _CHARACTER_INDEX_BY_ID: Final = {character.id: index for index, character in enumerate(CHARACTERS)}
 
@@ -229,9 +289,13 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
         self._diamonds: list[int] = [0] * _NUM_PLAYERS
         self._auto_discard = bool(game.get_parameters().get("auto_discard", False))
         self._cur_player = 0
-        self._pending_decision: PendingDecision | None = None
+        # The player decision or chance draw (Reaper, Dumbledore) to resolve next.
+        self._pending_step: PendingStep | None = None
         self._actions_left = _ACTIONS_PER_TURN
         self._next_turn_bonus: list[int] = [0] * _NUM_PLAYERS
+        # Top character card known to `_peeked_by`; it is the next card drawn.
+        self._peeked_character: int | None = None
+        self._peeked_by: int | None = None
         self._nodes = 0
         self._game_over = False
 
@@ -260,7 +324,10 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
                 f"p{player}: score={self._scores[player]} diamonds={self._diamonds[player]} "
                 f"portal={portal} activated={activated} hand={hand}",
             )
-        lines.append(f"turn=p{self._cur_player} actions_left={self._actions_left}")
+        peeked = None if self._peeked_character is None else CHARACTERS[self._peeked_character].id
+        lines.append(
+            f"turn=p{self._cur_player} actions_left={self._actions_left} peeked_character={peeked}",
+        )
         return "\n".join(lines)
 
     # endregion
@@ -271,10 +338,11 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
         """Return the mover: a player id, or the terminal/chance sentinel."""
         if self._game_over:
             return pyspiel.PlayerId.TERMINAL
-        if self._pending_decision is not None:
-            return self._pending_decision.actor
+        # Display refills come first so that turn-boundary choices see the new cards.
         if self._pending_refill() is not None:
             return pyspiel.PlayerId.CHANCE
+        if self._pending_step is not None:
+            return self._pending_step.actor
         return self._cur_player
 
     def chance_outcomes(self) -> list[tuple[int, float]]:
@@ -287,6 +355,12 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
         deck = self._pending_refill()
         if deck is None:
             raise ValueError("chance_outcomes called on a non-chance node")
+        if (
+            deck is self._character_deck
+            and self._peeked_character is not None
+            and len(self._character_display) < _CHAR_DISPLAY_SIZE
+        ):
+            return [(self._peeked_character, 1.0)]
         total = deck.total()
         return [(key, count / total) for key, count in sorted(deck.items()) if count]
 
@@ -312,7 +386,7 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
             for other in range(_NUM_PLAYERS)
         ]
         paid = self._selected_payment_labels()
-        decision = self._pending_decision
+        decision = self._pending_step
         red_target = decision.target_player if isinstance(decision, RedAbilityDecision) else None
         revealed_hand = (
             sorted(self._hands[decision.target_player].elements())
@@ -327,6 +401,7 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
             if isinstance(decision, PaymentDecision)
             else "none"
         )
+        peeked = self._visible_peeked_character(player)
         return (
             f"p{player} hand={hand} "
             f"pearls={self._pearl_display} "
@@ -338,7 +413,10 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
             f"left={self._actions_left} payment_target={payment_target} paid={list(paid)} "
             f"red_choice={decision.choice if isinstance(decision, RedAbilityDecision) else None} "
             f"red_target={red_target} "
-            f"revealed_hand={revealed_hand}"
+            f"revealed_hand={revealed_hand} "
+            f"hand_limits={[self._hand_limit(other) for other in range(_NUM_PLAYERS)]} "
+            f"peeked_character={None if peeked is None else CHARACTERS[peeked].id} "
+            f"blue_choice={decision.choice if isinstance(decision, BlueAbilityDecision) else None}"
         )
 
     def observation_tensor(self, player: int) -> list[float]:
@@ -351,9 +429,11 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
             Flat tensor ordered as observing-player one-hot, own-hand counts,
             pearl-display slots, character-display slots, portal slots,
             activated-character counts, character-discard counts, scores,
-            diamonds, queued action bonuses, remaining actions,
-            and pending-payment details. Each card slot uses an empty/card-type
-            one-hot; count-valued sections use ascending card or pearl value.
+            diamonds, queued action bonuses, remaining actions, the top
+            character card if this player peeked at it, the pending blue
+            choice kind, and pending-payment details. Each card slot uses an
+            empty/card-type one-hot; count-valued sections use ascending card
+            or pearl value.
         """
         planes: list[float] = []
         # one-hot encoding of the player receiving this observation
@@ -379,9 +459,15 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
         planes.extend(
             1.0 if self._actions_left == step + 1 else 0.0 for step in range(_MAX_REMAINING_ACTIONS)
         )
+        peeked = self._visible_peeked_character(player)
+        planes.extend(self._character_one_hot([] if peeked is None else [peeked], 0))
+        decision = self._pending_step
+        planes.extend(
+            1.0 if isinstance(decision, BlueAbilityDecision) and decision.choice is choice else 0.0
+            for choice in BlueChoice
+        )
         # Pending activation data is public. Printed and effective counts are
         # separate because abilities and diamonds may modify physical pearls.
-        decision = self._pending_decision
         payment_pending = isinstance(decision, PaymentDecision)
         target_owner = decision.target_owner if payment_pending else None
         slot_paid = decision.target_slot if payment_pending else None
@@ -429,7 +515,9 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
 
     def _legal_actions(self, player: int) -> list[int]:
         """Return the sorted legal actions for `player`."""
-        decision = self._pending_decision
+        decision = self._pending_step
+        if isinstance(decision, BlueAbilityDecision):
+            return self._blue_choice_actions(player, decision)
         if isinstance(decision, RedAbilityDecision):
             return self._red_choice_actions(player, decision)
         if isinstance(decision, PaymentDecision):
@@ -440,6 +528,10 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
                 for value in _PEARL_VALUES
                 if self._hands[player][value]
             ]
+        return self._turn_actions(player)
+
+    def _turn_actions(self, player: int) -> list[int]:
+        """Return the sorted turn actions and free moves for `player` without a decision."""
         actions: list[int] = list(range(len(self._pearl_display)))
         if self._pearl_display:
             actions.append(Action.REFRESH_PEARLS)
@@ -459,35 +551,35 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
                 character,
             ):
                 actions.append(Action.ACTIVATE_NEIGHBOR_0 + slot)
+        for card_id, ability in self._owned_abilities(player, PearlToDiamondAbility):
+            if self._hands[player][ability.printed_value]:
+                actions.append(_CONVERSION_ACTIONS[(card_id, ability.printed_value)])
         # A player is never stuck: refreshing an empty display is a legal pass.
         return sorted(actions) if actions else [int(Action.REFRESH_PEARLS)]
 
     def _apply_action(self, action: int) -> None:
         """Apply `action`, which is a chance outcome on chance nodes."""
         self._nodes += 1
-        decision = self._pending_decision
-        if decision is not None:
-            if isinstance(decision, RedAbilityDecision):
-                self._apply_red_choice(decision, action)
-            else:
-                self._apply_pending_decision(
-                    decision.actor,
-                    decision,
-                    action,
-                )
-            if self._pending_decision is None:
-                self._end_action()
-        elif (deck := self._pending_refill()) is not None:
+        step = self._pending_step
+        if (deck := self._pending_refill()) is not None:
             self._draw(deck, action)
+        elif isinstance(step, (PaymentDecision, RedAbilityDecision, BlueAbilityDecision)):
+            self._apply_decision(step, action)
         elif self._must_discard(self._cur_player):
             self._discard(self._cur_player, action - Action.DISCARD_1 + 1)
             if not self._must_discard(self._cur_player):
                 self._end_turn()
+        elif action in _CONVERSION_KEYS:
+            self._convert_pearl_to_diamond(self._cur_player, action)
         else:
             self._apply_player_action(action)
-            if self._pending_decision is None:
+            if self._pending_step is None:
                 self._end_action()
-        if self._pending_decision is None and not self._pearl_deck.total():
+        # Player decisions block the reshuffle (Puss in Boots takes back a
+        # discarded pearl); chance steps may need the reshuffled cards.
+        step = self._pending_step
+        player_decision = step is not None and not isinstance(step, (HandDrawStep, PeekStep))
+        if not player_decision and not self._pearl_deck.total():
             # ponytail: instant reshuffle of the discard pile; the real game
             # shuffles once, which only matters for card counting.
             self._pearl_deck += self._pearl_discard
@@ -495,12 +587,30 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
         if self._nodes >= _MAX_NODES:
             self._game_over = True
 
+    def _apply_decision(
+        self,
+        decision: PaymentDecision | RedAbilityDecision | BlueAbilityDecision,
+        action: int,
+    ) -> None:
+        """Apply `action` to the pending player decision.
+
+        Payment and red choices belong to the activation action and consume it
+        once resolved; blue turn-boundary choices never consume an action.
+        """
+        if isinstance(decision, BlueAbilityDecision):
+            self._apply_blue_choice(decision, action)
+            return
+        if isinstance(decision, RedAbilityDecision):
+            self._apply_red_choice(decision, action)
+        else:
+            self._apply_pending_decision(decision.actor, decision, action)
+        if self._pending_step is None:
+            self._end_action()
+
     def _action_to_string(self, player: int, action: int) -> str:
         """Return a label for `action` as taken by `player`."""
-        decision = self._pending_decision
         if player == pyspiel.PlayerId.CHANCE:
-            pearl = len(self._pearl_display) < _PEARL_DISPLAY_SIZE and self._pearl_deck.total()
-            label = f"DealPearl:{action}" if pearl else f"DealCharacter:{CHARACTERS[action].id}"
+            label = self._chance_label(action)
         elif action <= Action.TAKE_PEARL_3:
             label = f"TakePearl:{self._pearl_display[action]}"
         elif action == Action.REFRESH_PEARLS:
@@ -516,34 +626,85 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
             slot = action - Action.ACTIVATE_NEIGHBOR_0
             character = CHARACTERS[self._portals[target_owner][slot]]
             label = f"ActivateNeighbor:{character.id}"
-        elif isinstance(decision, RedAbilityDecision):
-            label = self._red_choice_label(decision.choice, action)
-        elif action <= Action.DISCARD_8:
-            value = action - Action.DISCARD_1 + 1
-            label = f"Discard:{value}"
-        elif isinstance(decision, PaymentDecision):
-            option = self._payment_option_for_action(decision, action)
-            label = self._payment_label(option)
         else:
-            message = f"action {action} is not meaningful in the current state"
-            raise ValueError(message)
+            label = self._choice_label(action)
         return label
 
+    def _chance_label(self, action: int) -> str:
+        """Return the label for a chance outcome at the pending draw."""
+        if self._pending_refill() is self._pearl_deck:
+            return f"DealPearl:{action}"
+        if len(self._character_display) < _CHAR_DISPLAY_SIZE:
+            return f"DealCharacter:{CHARACTERS[action].id}"
+        return f"PeekCharacter:{CHARACTERS[action].id}"
+
+    def _choice_label(self, action: int) -> str:
+        """Return the label for a decision, discard, or free-move action."""
+        decision = self._pending_step
+        if isinstance(decision, BlueAbilityDecision):
+            return self._blue_choice_label(decision.actor, action)
+        if action in _CONVERSION_KEYS:
+            card_id, value = _CONVERSION_KEYS[action]
+            return f"ConvertToDiamond:{value}:{card_id}"
+        if isinstance(decision, RedAbilityDecision):
+            return self._red_choice_label(decision.choice, action)
+        if action <= Action.DISCARD_8:
+            return f"Discard:{action - Action.DISCARD_1 + 1}"
+        if isinstance(decision, PaymentDecision):
+            return self._payment_label(self._payment_option_for_action(decision, action))
+        message = f"action {action} is not meaningful in the current state"
+        raise ValueError(message)
+
     def _pending_refill(self) -> Counter[int] | None:
-        """Return the deck that must be drawn from before the next player move."""
+        """Return the deck that must be drawn from before the next player move.
+
+        Display refills come first, then a pending chance step (Reaper hand
+        draw or Dumbledore peek). A hand draw always finds cards because its
+        player's discarded hand is reshuffled in when the deck runs out, and a
+        peek is dropped when a refill empties the character deck.
+        """
         if len(self._pearl_display) < _PEARL_DISPLAY_SIZE and self._pearl_deck.total():
             return self._pearl_deck
         if len(self._character_display) < _CHAR_DISPLAY_SIZE and self._character_deck.total():
             return self._character_deck
+        if isinstance(self._pending_step, HandDrawStep):
+            return self._pearl_deck
+        if isinstance(self._pending_step, PeekStep):
+            return self._character_deck
         return None
 
     def _draw(self, deck: Counter[int], outcome: int) -> None:
-        """Move the drawn card from `deck` to the display it belongs to."""
-        deck[outcome] -= 1
-        if deck is self._pearl_deck:
+        """Resolve the chance `outcome` drawn from `deck`, in `_pending_refill` order."""
+        step = self._pending_step
+        if deck is self._pearl_deck and len(self._pearl_display) < _PEARL_DISPLAY_SIZE:
+            deck[outcome] -= 1
             self._pearl_display.append(outcome)
-        else:
+        elif deck is self._character_deck and len(self._character_display) < _CHAR_DISPLAY_SIZE:
+            deck[outcome] -= 1
             self._character_display.append(outcome)
+            # chance_outcomes forces a peeked card to be the next one drawn.
+            self._peeked_character = None
+            self._peeked_by = None
+            if isinstance(step, PeekStep) and not deck.total():
+                self._pending_step = None
+                self._offer_portal_swap()
+        elif isinstance(step, HandDrawStep):
+            deck[outcome] -= 1
+            self._hands[step.player][outcome] += 1
+            if step.remaining > 1:
+                self._pending_step = HandDrawStep(step.player, step.remaining - 1)
+                return
+            self._pending_step = None
+            self._finish_turn()
+        elif isinstance(step, PeekStep):
+            # Peeking leaves the card on top of the deck.
+            self._peeked_character = outcome
+            self._peeked_by = step.player
+            self._pending_step = None
+            self._offer_portal_swap()
+        else:
+            message = "no chance draw is pending"
+            raise RuntimeError(message)
 
     def _apply_player_action(self, action: int) -> None:
         """Apply one of the three per-turn actions of the current player."""
@@ -589,7 +750,7 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
         if plan is not None:
             self._resolve_activation(player, target_owner, slot, plan)
             return
-        self._pending_decision = decision
+        self._pending_step = decision
 
     def _activation_plans(self, player: int, character: Character) -> tuple[PaymentPlan, ...]:
         """Return complete currently available plans for activating `character`."""
@@ -603,6 +764,7 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
     def _activation_resources(self, player: int) -> ResourceOptions:
         """Return physical and persistent virtual resources available to `player`."""
         resources: list[tuple[PearlPayment, ...]] = []
+        decreasers = self._owned_abilities(player, DiamondDecreaseAbility)
         for group in hand_resource_options(self._hands[player]):
             base_payment = group[0]
             options = list(group)
@@ -624,6 +786,8 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
                     )
                     for value in ability.effective_values
                 )
+            if self._diamonds[player]:
+                options.extend(self._diamond_options(base_payment, options, decreasers))
             resources.append(tuple(options))
         for card in self._activated_characters[player]:
             character = CHARACTERS[card]
@@ -644,6 +808,42 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
                 ),
             )
         return tuple(resources)
+
+    @staticmethod
+    def _diamond_options(
+        base_payment: PearlPayment,
+        options: list[PearlPayment],
+        decreasers: list[tuple[str, DiamondDecreaseAbility]],
+    ) -> list[PearlPayment]:
+        """Return diamond-modified interpretations of one physical pearl.
+
+        One diamond raises the printed value by 1 (RULES.md section 8.1), or
+        lowers it by 1 when a decreasing ability such as Amazon is active. A
+        value already reachable without a diamond is skipped as dominated.
+
+        Args:
+            base_payment: Unmodified use of the physical pearl at its printed value.
+            options: Interpretations already offered for this pearl.
+            decreasers: Activated ``(character id, ability)`` pairs allowing -1.
+
+        Returns:
+            Additional mutually exclusive interpretations, each spending one diamond.
+        """
+        value = base_payment.effective_value
+        free_values = {option.effective_value for option in options}
+        modified: list[tuple[int, tuple[str, ...]]] = [(value + 1, ())]
+        modified.extend((value - 1, (card_id,)) for card_id, _ in decreasers)
+        return [
+            PearlPayment(
+                PearlSource.HAND,
+                effective,
+                printed_value=value,
+                diamonds_spent=1,
+                modifiers=modifiers,
+            )
+            for effective, modifiers in modified
+            if 1 <= effective <= 8 and effective not in free_values
+        ]
 
     def _pending_decision_actions(
         self,
@@ -669,9 +869,9 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
         updated = decision.choose(option)
         plan = updated.resolved_plan
         if plan is None:
-            self._pending_decision = updated
+            self._pending_step = updated
             return
-        self._pending_decision = None
+        self._pending_step = None
         self._resolve_activation(
             player,
             updated.target_owner,
@@ -704,7 +904,7 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
         elif isinstance(character.ability, KeepPearlAbility):
             values = tuple(sorted(set(plan.discarded_values)))
             if values:
-                self._pending_decision = RedAbilityDecision(
+                self._pending_step = RedAbilityDecision(
                     player,
                     RedChoice.KEEP_PEARL,
                     (0, *values),
@@ -716,13 +916,13 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
                 if other != player and self._hands[other].total()
             )
             if targets:
-                self._pending_decision = RedAbilityDecision(player, RedChoice.STEAL_TARGET, targets)
+                self._pending_step = RedAbilityDecision(player, RedChoice.STEAL_TARGET, targets)
         elif isinstance(character.ability, DiscardPortalAbility):
             targets = tuple(
                 other for other in range(_NUM_PLAYERS) if other != player and self._portals[other]
             )
             if targets:
-                self._pending_decision = RedAbilityDecision(
+                self._pending_step = RedAbilityDecision(
                     player,
                     RedChoice.DISCARD_TARGET,
                     targets,
@@ -769,7 +969,7 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
         )
         if decision.choice is RedChoice.STEAL_TARGET:
             values = tuple(pearl for pearl in _PEARL_VALUES if self._hands[value][pearl])
-            self._pending_decision = RedAbilityDecision(
+            self._pending_step = RedAbilityDecision(
                 decision.actor,
                 RedChoice.STEAL_PEARL,
                 values,
@@ -778,7 +978,7 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
             return
         if decision.choice is RedChoice.DISCARD_TARGET:
             slots = tuple(range(len(self._portals[value])))
-            self._pending_decision = RedAbilityDecision(
+            self._pending_step = RedAbilityDecision(
                 decision.actor,
                 RedChoice.DISCARD_PORTAL,
                 slots,
@@ -801,26 +1001,112 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
                 raise RuntimeError("discard decision has no target player")
             card = self._portals[other].pop(value)
             self._character_discard[card] += 1
-        self._pending_decision = None
+        self._pending_step = None
+
+    def _blue_choice_actions(self, player: int, decision: BlueAbilityDecision) -> list[int]:
+        """Return actions available to the blue ability's owner."""
+        if player != decision.actor:
+            return []
+        if decision.choice is BlueChoice.REDRAW_HAND:
+            return [int(Action.REAPER_KEEP_HAND), int(Action.REAPER_REDRAW_HAND)]
+        return [int(Action.MAD_HATTER_SKIP)] + [
+            int(Action.MAD_HATTER_SWAP_0_0 + portal_slot * _CHAR_DISPLAY_SIZE + display_slot)
+            for portal_slot in range(len(self._portals[player]))
+            for display_slot in range(len(self._character_display))
+        ]
+
+    def _blue_choice_label(self, player: int, action: int) -> str:
+        """Return the visible label for one blue ability action."""
+        if action == Action.REAPER_KEEP_HAND:
+            return "ReaperKeepHand"
+        if action == Action.REAPER_REDRAW_HAND:
+            return "ReaperRedrawHand"
+        if action == Action.MAD_HATTER_SKIP:
+            return "MadHatterSkip"
+        portal_slot, display_slot = divmod(action - Action.MAD_HATTER_SWAP_0_0, _CHAR_DISPLAY_SIZE)
+        portal_id = CHARACTERS[self._portals[player][portal_slot]].id
+        display_id = CHARACTERS[self._character_display[display_slot]].id
+        return f"MadHatterSwap:{portal_id}<->{display_id}"
+
+    def _apply_blue_choice(self, decision: BlueAbilityDecision, action: int) -> None:
+        """Resolve a Reaper or Mad Hatter choice without consuming a turn action."""
+        if action not in self._blue_choice_actions(decision.actor, decision):
+            message = "blue ability action is not currently offered"
+            raise ValueError(message)
+        self._pending_step = None
+        player = decision.actor
+        if decision.choice is BlueChoice.SWAP_PORTAL:
+            if action != Action.MAD_HATTER_SKIP:
+                portal_slot, display_slot = divmod(
+                    action - Action.MAD_HATTER_SWAP_0_0,
+                    _CHAR_DISPLAY_SIZE,
+                )
+                portal = self._portals[player]
+                display = self._character_display
+                portal[portal_slot], display[display_slot] = (
+                    display[display_slot],
+                    portal[portal_slot],
+                )
+            return
+        if action == Action.REAPER_REDRAW_HAND:
+            # The discarded hand is in the discard pile, so the deck plus the
+            # discard pile always hold enough cards for every redraw.
+            self._pending_step = HandDrawStep(player, self._hands[player].total())
+            self._pearl_discard += self._hands[player]
+            self._hands[player] = Counter()
+            return
+        self._finish_turn()
+
+    def _convert_pearl_to_diamond(self, player: int, action: int) -> None:
+        """Turn one hand pearl into a diamond as a free move (Snow White)."""
+        if action not in self._legal_actions(player):
+            message = "pearl conversion is not currently offered"
+            raise ValueError(message)
+        _, value = _CONVERSION_KEYS[action]
+        self._discard(player, value)
+        self._diamonds[player] += 1
+
+    def _owned_abilities(
+        self,
+        player: int,
+        kind: type[_AbilityT],
+    ) -> list[tuple[str, _AbilityT]]:
+        """Return ``(character id, ability)`` for `player`'s activated `kind` abilities."""
+        return [
+            (CHARACTERS[card].id, ability)
+            for card in self._activated_characters[player]
+            if isinstance(ability := CHARACTERS[card].ability, kind)
+        ]
+
+    def _visible_peeked_character(self, player: int) -> int | None:
+        """Return the peeked top character card if `player` is the one who peeked."""
+        return self._peeked_character if self._peeked_by == player else None
 
     @staticmethod
     def _payment_action(payment: PearlPayment) -> int:
         """Return the stable OpenSpiel action for one payment resource."""
         if payment.source is PearlSource.HAND:
-            if payment.printed_value is None or payment.diamonds_spent or not payment.discard:
+            if (
+                payment.printed_value is None
+                or payment.diamonds_spent > 1
+                or len(payment.modifiers) > 1
+                or not payment.discard
+            ):
                 message = "this physical payment interpretation has no action identifier"
                 raise RuntimeError(message)
-            if not payment.modifiers and payment.printed_value == payment.effective_value:
+            unmodified = payment.printed_value == payment.effective_value
+            if not payment.modifiers and not payment.diamonds_spent and unmodified:
                 return int(_HAND_PAYMENT_ACTIONS[payment.printed_value])
-            if len(payment.modifiers) == 1:
-                key = (payment.modifiers[0], payment.printed_value, payment.effective_value)
-                try:
-                    return int(_SUBSTITUTED_PAYMENT_ACTIONS[key])
-                except KeyError as error:
-                    message = "this substituted payment has no action identifier"
-                    raise RuntimeError(message) from error
-            message = "this physical payment interpretation has no action identifier"
-            raise RuntimeError(message)
+            modifier = payment.modifiers[0] if payment.modifiers else None
+            key = (modifier, payment.printed_value, payment.effective_value)
+            table = (
+                _DIAMOND_PAYMENT_ACTIONS if payment.diamonds_spent else _SUBSTITUTED_PAYMENT_ACTIONS
+            )
+            try:
+                return int(table[key])
+            except KeyError as error:
+                message = "this modified payment has no action identifier"
+                raise RuntimeError(message) from error
         if payment.source_id is None:
             message = "a virtual payment needs a source identifier"
             raise RuntimeError(message)
@@ -849,24 +1135,24 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
     def _payment_label(payment: PearlPayment) -> str:
         """Return a human-readable label for a physical or virtual payment."""
         if payment.source is PearlSource.HAND:
-            if payment.modifiers:
+            tags = (*payment.modifiers, *(("diamond",) if payment.diamonds_spent else ()))
+            if tags:
                 return (
-                    f"PayHand:{payment.printed_value}As{payment.effective_value}:"
-                    f"{payment.modifiers[0]}"
+                    f"PayHand:{payment.printed_value}As{payment.effective_value}:{':'.join(tags)}"
                 )
             return f"PayHand:{payment.printed_value}"
         return f"UseVirtual:{payment.source_id}As{payment.effective_value}"
 
     def _selected_payment_labels(self) -> tuple[str, ...]:
         """Return public labels of resources selected for a pending payment."""
-        decision = self._pending_decision
+        decision = self._pending_step
         if not isinstance(decision, PaymentDecision):
             return ()
         return tuple(self._payment_label(payment) for payment in decision.selected)
 
     def _selected_physical_values(self) -> tuple[int, ...]:
         """Return publicly selected physical pearl values in a pending payment."""
-        decision = self._pending_decision
+        decision = self._pending_step
         if not isinstance(decision, PaymentDecision):
             return ()
         return tuple(
@@ -876,10 +1162,21 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
         )
 
     def _end_action(self) -> None:
-        """Consume one action and hand over the turn once three have been spent."""
+        """Consume one action and start the end of the turn after the last one."""
         self._actions_left -= 1
-        if self._actions_left:
+        if not self._actions_left:
+            self._after_turn()
+
+    def _after_turn(self) -> None:
+        """Offer after-turn abilities (Reaper) before the hand limit applies."""
+        player = self._cur_player
+        if self._hands[player].total() and self._owned_abilities(player, RedrawHandAbility):
+            self._pending_step = BlueAbilityDecision(player, BlueChoice.REDRAW_HAND)
             return
+        self._finish_turn()
+
+    def _finish_turn(self) -> None:
+        """Enforce the hand limit and pass the turn once the hand fits."""
         if self._auto_discard:
             self._trim_hand(self._cur_player)
         if not self._must_discard(self._cur_player):
@@ -888,22 +1185,59 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
     def _end_turn(self) -> None:
         """Hand the turn to the next player and end the game once the target is reached."""
         self._cur_player = (self._cur_player + 1) % _NUM_PLAYERS
-        self._actions_left = _ACTIONS_PER_TURN + self._next_turn_bonus[self._cur_player]
-        self._next_turn_bonus[self._cur_player] = 0
+        player = self._cur_player
+        self._actions_left = (
+            _ACTIONS_PER_TURN
+            + self._next_turn_bonus[player]
+            + sum(
+                ability.actions for _, ability in self._owned_abilities(player, TurnActionsAbility)
+            )
+        )
+        self._next_turn_bonus[player] = 0
         # The round is played to the end so that every player had equal turns.
-        if self._cur_player == 0 and max(self._scores) >= _TARGET_POINTS:
+        if player == 0 and max(self._scores) >= _TARGET_POINTS:
             self._game_over = True
+            return
+        self._before_turn()
+
+    def _before_turn(self) -> None:
+        """Start before-turn abilities: the Dumbledore peek, then the Mad Hatter swap."""
+        player = self._cur_player
+        if (
+            self._owned_abilities(player, PeekCharacterDeckAbility)
+            and self._peeked_character is None
+            and self._character_deck.total()
+        ):
+            self._pending_step = PeekStep(player)  # resolving it then offers the swap
+            return
+        self._offer_portal_swap()
+
+    def _offer_portal_swap(self) -> None:
+        """Offer the Mad Hatter swap when the current player can make one."""
+        player = self._cur_player
+        if (
+            self._owned_abilities(player, PortalMarketSwapAbility)
+            and self._portals[player]
+            and self._character_display
+        ):
+            self._pending_step = BlueAbilityDecision(player, BlueChoice.SWAP_PORTAL)
+
+    def _hand_limit(self, player: int) -> int:
+        """Return `player`'s end-of-turn hand limit, including stacking bonuses."""
+        return _HAND_LIMIT + sum(
+            ability.bonus for _, ability in self._owned_abilities(player, HandLimitAbility)
+        )
 
     def _must_discard(self, player: int) -> bool:
         """Return whether `player` still owes a discard before the turn can pass on.
 
-        A player is over the hand limit only after having spent all three of
-        their actions, so `_actions_left` doubles as the discard phase flag.
+        A player is over the hand limit only after having spent all of their
+        actions, so `_actions_left` doubles as the discard phase flag.
         """
         return (
             not self._auto_discard
             and not self._actions_left
-            and self._hands[player].total() > _HAND_LIMIT
+            and self._hands[player].total() > self._hand_limit(player)
         )
 
     def _discard(self, player: int, value: int) -> None:
@@ -920,7 +1254,7 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
         """Discard down to the hand limit, dropping the least useful pearls first."""
         hand = self._hands[player]
         wanted = self._wanted_values(player)
-        while hand.total() > _HAND_LIMIT:
+        while hand.total() > self._hand_limit(player):
             spare = [value for value in hand.elements() if value not in wanted]
             value = min(spare) if spare else min(hand.elements())
             hand[value] -= 1
@@ -984,6 +1318,9 @@ class MoltharGame(pyspiel.Game):  # type: ignore[misc]
             + _NUM_PLAYERS  # diamonds
             + _NUM_PLAYERS  # queued action bonuses
             + _MAX_REMAINING_ACTIONS
+            + 1
+            + len(CHARACTERS)  # top character card, if this player peeked at it
+            + len(BlueChoice)  # pending blue choice kind
             + 1  # whether a payment decision is pending
             + _NUM_PLAYERS  # owner of its target character
             + _PORTAL_SLOTS  # portal slot of a half-paid activation

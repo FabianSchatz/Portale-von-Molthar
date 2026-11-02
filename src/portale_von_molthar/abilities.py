@@ -130,6 +130,79 @@ class PearlValueSubstitutionAbility:
             raise TypeError(message)
 
 
+@dataclass(frozen=True, slots=True)
+class TurnActionsAbility:
+    """Grant additional actions at the start of every later turn of the owner.
+
+    Attributes:
+        actions: Number of actions added to each turn.
+    """
+
+    actions: int
+
+    def __post_init__(self) -> None:
+        """Validate the number of granted actions."""
+        if self.actions <= 0:
+            message = "an action-granting ability must add at least one action"
+            raise ValueError(message)
+
+
+@dataclass(frozen=True, slots=True)
+class HandLimitAbility:
+    """Raise the owner's end-of-turn pearl hand limit; every activated copy stacks.
+
+    Attributes:
+        bonus: Number of pearl cards added to the hand limit.
+    """
+
+    bonus: int
+
+    def __post_init__(self) -> None:
+        """Validate the hand-limit increase."""
+        if self.bonus <= 0:
+            message = "a hand-limit ability must raise the limit by at least one card"
+            raise ValueError(message)
+
+
+@dataclass(frozen=True, slots=True)
+class DiamondDecreaseAbility:
+    """Allow a diamond to lower a paid pearl by one instead of raising it."""
+
+
+@dataclass(frozen=True, slots=True)
+class PearlToDiamondAbility:
+    """Convert hand pearls of one printed value into diamonds during the turn.
+
+    The conversion is a free move and may be repeated for every matching card.
+
+    Attributes:
+        printed_value: Value printed on each convertible pearl card.
+    """
+
+    printed_value: int
+
+    def __post_init__(self) -> None:
+        """Validate the convertible pearl value."""
+        if not 1 <= self.printed_value <= 8:
+            message = "the convertible pearl value must be from 1 through 8"
+            raise ValueError(message)
+
+
+@dataclass(frozen=True, slots=True)
+class RedrawHandAbility:
+    """After the final action, optionally discard the hand and draw as many pearls."""
+
+
+@dataclass(frozen=True, slots=True)
+class PortalMarketSwapAbility:
+    """Before the turn, optionally swap one own portal character with a face-up one."""
+
+
+@dataclass(frozen=True, slots=True)
+class PeekCharacterDeckAbility:
+    """Before the turn, privately look at the top card of the character draw deck."""
+
+
 CharacterAbility: TypeAlias = (
     GainActionsAbility
     | NeighborActivationAbility
@@ -139,4 +212,11 @@ CharacterAbility: TypeAlias = (
     | DiscardPortalAbility
     | VirtualPearlAbility
     | PearlValueSubstitutionAbility
+    | TurnActionsAbility
+    | HandLimitAbility
+    | DiamondDecreaseAbility
+    | PearlToDiamondAbility
+    | RedrawHandAbility
+    | PortalMarketSwapAbility
+    | PeekCharacterDeckAbility
 )

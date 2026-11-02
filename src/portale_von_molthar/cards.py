@@ -1,4 +1,4 @@
-"""Structured data for implemented character cards."""
+"""Structured data for all character cards of the base game."""
 
 from dataclasses import dataclass
 from typing import Final
@@ -6,24 +6,33 @@ from typing import Final
 from portale_von_molthar.abilities import (
     AbilityType,
     CharacterAbility,
+    DiamondDecreaseAbility,
     DiscardPortalAbility,
     GainActionsAbility,
+    HandLimitAbility,
     KeepPearlAbility,
     NeighborActivationAbility,
     NextPlayerActionAbility,
+    PearlToDiamondAbility,
     PearlValueSubstitutionAbility,
+    PeekCharacterDeckAbility,
+    PortalMarketSwapAbility,
+    RedrawHandAbility,
     StealPearlAbility,
+    TurnActionsAbility,
     VirtualPearlAbility,
 )
 from portale_von_molthar.requirements import (
     AllOf,
     AnyOf,
+    ConsecutiveValues,
     ExactValues,
     FixedCountSum,
     Parity,
     ParityValues,
     Requirement,
     SameValue,
+    VariableCountSum,
 )
 
 
@@ -66,11 +75,21 @@ class Character:
         if (
             isinstance(
                 self.ability,
-                (PearlValueSubstitutionAbility, VirtualPearlAbility),
+                (
+                    PearlValueSubstitutionAbility,
+                    VirtualPearlAbility,
+                    TurnActionsAbility,
+                    HandLimitAbility,
+                    DiamondDecreaseAbility,
+                    PearlToDiamondAbility,
+                    RedrawHandAbility,
+                    PortalMarketSwapAbility,
+                    PeekCharacterDeckAbility,
+                ),
             )
             and self.ability_type is not AbilityType.BLUE
         ):
-            message = "persistent pearl abilities must belong to blue characters"
+            message = "persistent abilities must belong to blue characters"
             raise ValueError(message)
         if (
             isinstance(
@@ -90,7 +109,7 @@ class Character:
             raise ValueError(message)
 
 
-# Implemented cards from docs/character_cards.md.
+# All 54 base-game cards from docs/character_cards.md.
 CHARACTERS: Final = (
     Character("goblin", SameValue(2), points=1, copies=3),
     Character("fluffy", SameValue(3), points=2, copies=2),
@@ -164,7 +183,7 @@ CHARACTERS: Final = (
     ),
     Character(
         "golem_1",
-        ExactValues((4, 4, 6, 8)),
+        ExactValues((2, 4, 6, 8)),
         points=2,
         copies=1,
         ability_type=AbilityType.RED,
@@ -222,6 +241,22 @@ CHARACTERS: Final = (
         ability=PearlValueSubstitutionAbility(1, (8,)),
     ),
     Character(
+        "reaper",
+        ExactValues((1, 8)),
+        points=1,
+        copies=1,
+        ability_type=AbilityType.BLUE,
+        ability=RedrawHandAbility(),
+    ),
+    Character(
+        "little_red_riding_hood",
+        ExactValues((4, 5, 6, 7, 8)),
+        points=1,
+        copies=1,
+        ability_type=AbilityType.BLUE,
+        ability=TurnActionsAbility(1),
+    ),
+    Character(
         "fuchur",
         ExactValues((1, 1, 1, 1)),
         points=0,
@@ -230,11 +265,53 @@ CHARACTERS: Final = (
         ability=VirtualPearlAbility(tuple(range(1, 9))),
     ),
     Character(
+        "amazon",
+        ExactValues((3, 5, 7)),
+        points=1,
+        copies=1,
+        diamonds=1,
+        ability_type=AbilityType.BLUE,
+        ability=DiamondDecreaseAbility(),
+    ),
+    Character(
+        "snow_white",
+        ExactValues((2,)),
+        points=0,
+        copies=1,
+        diamonds=1,
+        ability_type=AbilityType.BLUE,
+        ability=PearlToDiamondAbility(2),
+    ),
+    Character(
+        "mad_hatter",
+        ConsecutiveValues(5),
+        points=2,
+        copies=1,
+        ability_type=AbilityType.BLUE,
+        ability=PortalMarketSwapAbility(),
+    ),
+    Character(
+        "dumbledore",
+        ConsecutiveValues(3),
+        points=1,
+        copies=1,
+        ability_type=AbilityType.BLUE,
+        ability=PeekCharacterDeckAbility(),
+    ),
+    Character(
         "phoenix",
         ExactValues((1, 2)),
         points=0,
         copies=2,
         ability_type=AbilityType.BLUE,
         ability=VirtualPearlAbility((8,)),
+    ),
+    Character(
+        "flying_monkey",
+        VariableCountSum(10),
+        points=1,
+        copies=3,
+        ability_type=AbilityType.BLUE,
+        ability=HandLimitAbility(1),
     ),
 )

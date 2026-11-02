@@ -88,3 +88,34 @@ def test_payment_plans_track_virtual_source() -> None:
     assert len(plans) == 1
     assert plans[0].pearls == (physical, virtual)
     assert plans[0].discarded_values == (1,)
+
+
+@pytest.mark.parametrize(("available_diamonds", "expected"), [(1, 0), (2, 1)])
+def test_payment_plans_respect_the_diamond_budget(
+    available_diamonds: int,
+    expected: int,
+) -> None:
+    """Each diamond-modified pearl spends one of the available diamonds."""
+    resources = (
+        (
+            PearlPayment(PearlSource.HAND, 3, printed_value=3),
+            PearlPayment(PearlSource.HAND, 4, printed_value=3, diamonds_spent=1),
+        ),
+        (
+            PearlPayment(PearlSource.HAND, 3, printed_value=3),
+            PearlPayment(PearlSource.HAND, 4, printed_value=3, diamonds_spent=1),
+        ),
+    )
+    plans = payment_plans(
+        resources,
+        ExactValues((4, 4)),
+        available_diamonds=available_diamonds,
+    )
+    assert len(plans) == expected
+    assert all(plan.diamonds_spent == 2 for plan in plans)
+
+
+def test_payment_plans_treat_identical_resources_as_one_multiset() -> None:
+    """Interchangeable pearls give one plan per value multiset, not per permutation."""
+    plans = payment_plans(hand_resource_options(Counter({3: 3, 4: 3})), ExactValues((3, 4)))
+    assert [tuple(pearl.printed_value for pearl in plan.pearls) for plan in plans] == [(3, 4)]

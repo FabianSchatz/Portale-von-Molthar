@@ -6,13 +6,16 @@ import enum
 import itertools
 from collections import Counter
 from dataclasses import dataclass
-from typing import TypeAlias
+from typing import TYPE_CHECKING, TypeAlias
 
 from portale_von_molthar.requirements import (
     Requirement,
     required_card_counts,
     requirement_matches,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 
 class PearlSource(enum.StrEnum):
@@ -173,18 +176,49 @@ def payment_plans(
     if required_diamonds > available_diamonds:
         return ()
 
+    # Identical resources (such as two printed 3s) are interchangeable, so each
+    # distinct group is enumerated once with a multiplicity instead of once per copy.
+    distinct = tuple(Counter(resources).items())
     plans: dict[tuple[tuple[object, ...], ...], PaymentPlan] = {}
     for count in required_card_counts(requirement, len(resources)):
-        for groups in itertools.combinations(resources, count):
-            for pearls in itertools.product(*groups):
-                ordered = tuple(sorted(pearls, key=_pearl_key))
+        for pearls in _selections(distinct, count, available_diamonds - required_diamonds):
+            ordered = tuple(sorted(pearls, key=_pearl_key))
+            effective_values = tuple(pearl.effective_value for pearl in ordered)
+            if requirement_matches(requirement, effective_values):
                 plan = PaymentPlan(ordered, required_diamonds)
-                if plan.diamonds_spent > available_diamonds:
-                    continue
-                effective_values = tuple(pearl.effective_value for pearl in ordered)
-                if requirement_matches(requirement, effective_values):
-                    plans.setdefault(_plan_key(plan), plan)
+                plans.setdefault(_plan_key(plan), plan)
     return _remove_dominated_plans(tuple(sorted(plans.values(), key=_plan_key)))
+
+
+def _selections(
+    groups: tuple[tuple[tuple[PearlPayment, ...], int], ...],
+    count: int,
+    diamonds: int,
+) -> Iterator[tuple[PearlPayment, ...]]:
+    """Yield every multiset of `count` resource uses within a diamond budget.
+
+    Args:
+        groups: Distinct resource groups with the number of identical copies of each.
+        count: Exact number of resources to select.
+        diamonds: Diamonds still available for pearl modifications.
+
+    Yields:
+        Selected interpretations, at most one per resource copy.
+    """
+    if not groups:
+        if not count:
+            yield ()
+        return
+    if count > sum(multiplicity for _, multiplicity in groups):
+        return
+    (group, multiplicity), rest = groups[0], groups[1:]
+    for taken in range(min(multiplicity, count) + 1):
+        for chosen in itertools.combinations_with_replacement(group, taken):
+            spent = sum(pearl.diamonds_spent for pearl in chosen)
+            if spent > diamonds:
+                continue
+            for remainder in _selections(rest, count - taken, diamonds - spent):
+                yield chosen + remainder
 
 
 def _pearl_key(pearl: PearlPayment) -> tuple[object, ...]:
@@ -213,22 +247,18 @@ def _remove_dominated_plans(plans: tuple[PaymentPlan, ...]) -> tuple[PaymentPlan
     All plans activate the same character and therefore have the same reward.
     Additional pearls or diamonds cannot improve that outcome under the
     documented rules, so a strict resource superset is never a useful choice.
+
+    All plans share one ``required_diamonds`` value and are duplicate-free, so
+    only a plan with strictly fewer pearls can be a proper subset.
     """
+    counted = tuple((plan, Counter(plan.pearls)) for plan in plans)
     return tuple(
         plan
-        for plan in plans
+        for plan, pearls in counted
         if not any(
-            alternative is not plan and _dominates(alternative, plan) for alternative in plans
+            len(alternative.pearls) < len(plan.pearls)
+            and alternative.diamonds_spent <= plan.diamonds_spent
+            and not alternative_pearls - pearls
+            for alternative, alternative_pearls in counted
         )
     )
-
-
-def _dominates(alternative: PaymentPlan, plan: PaymentPlan) -> bool:
-    """Return whether `alternative` consumes a proper subset of `plan`."""
-    alternative_pearls = Counter(alternative.pearls)
-    plan_pearls = Counter(plan.pearls)
-    pearls_are_subset = not alternative_pearls - plan_pearls
-    costs_less = (
-        alternative_pearls != plan_pearls or alternative.diamonds_spent < plan.diamonds_spent
-    )
-    return pearls_are_subset and alternative.diamonds_spent <= plan.diamonds_spent and costs_less
