@@ -76,7 +76,7 @@ def test_molthar_game_random_playthrough(seed: int, *, auto_discard: bool) -> No
 def test_molthar_game_registration() -> None:
     game = pyspiel.load_game("python_portale_von_molthar")
     assert game.num_players() == 2
-    assert game.num_distinct_actions() == 92
+    assert game.num_distinct_actions() == 100
     state = game.new_initial_state()
     assert state.is_chance_node()
     assert len(state.observation_tensor(0)) == game.observation_tensor_shape()[0]
@@ -91,8 +91,8 @@ def test_molthar_state_activation_scores() -> None:
     state._hands[0] = Counter({1: 1, 3: 1, 5: 1})  # noqa: SLF001
     state._pearl_display = [1, 2, 3, 4]  # noqa: SLF001
     state._character_display = [card, card]  # noqa: SLF001
-    assert 7 in state.legal_actions()
-    state.apply_action(7)
+    assert Action.ACTIVATE_0 in state.legal_actions()
+    state.apply_action(Action.ACTIVATE_0)
     assert state.scores[0] == CHARACTERS[card].points
     assert state._diamonds[0] == CHARACTERS[card].diamonds  # noqa: SLF001
     assert state._hands[0].total() == 0  # noqa: SLF001
@@ -307,9 +307,15 @@ def test_molthar_state_discard_choice() -> None:
     assert state.is_chance_node()  # the display is refilled before the discard
     state.apply_action(2)
     assert state.current_player() == 0
-    assert state.legal_actions() == [9, 13, 14, 15, 16]  # discard a 1, 5, 6, 7 or 8
-    assert state.action_to_string(0, 16) == "Discard:8"
-    state.apply_action(16)
+    assert state.legal_actions() == [
+        Action.DISCARD_1,
+        Action.DISCARD_5,
+        Action.DISCARD_6,
+        Action.DISCARD_7,
+        Action.DISCARD_8,
+    ]
+    assert state.action_to_string(0, Action.DISCARD_8) == "Discard:8"
+    state.apply_action(Action.DISCARD_8)
     assert state._hands[0] == Counter({1: 1, 5: 1, 6: 1, 7: 2})  # noqa: SLF001
     assert state._pearl_discard[8] == 1  # noqa: SLF001
     # The hand is at the limit again, so the turn passes on.
@@ -339,10 +345,10 @@ def test_molthar_state_diamond_cost_gates_activation() -> None:
     state._hands[0] = Counter({2: 3})  # noqa: SLF001
     state._pearl_display = [1, 3, 4, 5]  # noqa: SLF001
     state._character_display = [card, card]  # noqa: SLF001
-    assert 7 not in state.legal_actions()
+    assert Action.ACTIVATE_0 not in state.legal_actions()
     state._diamonds[0] = 1  # noqa: SLF001
-    assert 7 in state.legal_actions()
-    state.apply_action(7)
+    assert Action.ACTIVATE_0 in state.legal_actions()
+    state.apply_action(Action.ACTIVATE_0)
     assert state._diamonds[0] == 0  # noqa: SLF001
     assert state.scores[0] == CHARACTERS[card].points
 
@@ -356,7 +362,7 @@ def test_molthar_state_activation_payment_choice() -> None:
     state._hands[0] = Counter({1: 1, 3: 1, 5: 1, 7: 1})  # noqa: SLF001
     state._pearl_display = [2, 2, 4, 4]  # noqa: SLF001
     state._character_display = [card, card]  # noqa: SLF001
-    state.apply_action(7)
+    state.apply_action(Action.ACTIVATE_0)
     # Canonical ordering gives each payment set only one path through the tree.
     assert state.legal_actions() == [Action.PAY_HAND_1, Action.PAY_HAND_3]
     assert state.action_to_string(0, Action.PAY_HAND_1) == "PayHand:1"
@@ -380,8 +386,8 @@ def test_molthar_state_activation_pays_a_forced_remainder() -> None:
     state._hands[0] = Counter({6: 2, 7: 2})  # noqa: SLF001
     state._pearl_display = [1, 2, 3, 4]  # noqa: SLF001
     state._character_display = [card, card]  # noqa: SLF001
-    assert 7 in state.legal_actions()
-    state.apply_action(7)
+    assert Action.ACTIVATE_0 in state.legal_actions()
+    state.apply_action(Action.ACTIVATE_0)
     assert state._pending_step is None  # noqa: SLF001
     assert state._hands[0].total() == 0  # noqa: SLF001
     assert state.scores[0] == CHARACTERS[card].points
@@ -885,3 +891,131 @@ def test_molthar_state_dumbledore_peeks_at_the_next_character() -> None:
     state.apply_action(goblin)
     assert state._character_display == [lion, goblin]  # noqa: SLF001
     assert "peeked_character=None" in state.observation_string(1)
+
+
+def test_molthar_state_take_top_pearl() -> None:
+    """Taking the top pearl blind is a chance draw into the hand that costs one action."""
+    state = pyspiel.load_game("python_portale_von_molthar").new_initial_state()
+    state._pearl_display = [1, 2, 3, 4]  # noqa: SLF001
+    state._character_display = [0, 0]  # noqa: SLF001
+    state._pearl_deck = Counter({7: 2, 8: 1})  # noqa: SLF001
+    assert Action.TAKE_PEARL_DECK in state.legal_actions()
+    assert state.action_to_string(0, Action.TAKE_PEARL_DECK) == "TakePearlDeck"
+
+    state.apply_action(Action.TAKE_PEARL_DECK)
+    assert state.is_chance_node()
+    assert state.chance_outcomes() == [(7, 2 / 3), (8, 1 / 3)]
+    assert state.action_to_string(pyspiel.PlayerId.CHANCE, 7) == "TakeTopPearl:7"
+    state.apply_action(7)
+    assert state._hands[0] == Counter({7: 1})  # noqa: SLF001
+    assert state._pearl_deck == Counter({7: 1, 8: 1})  # noqa: SLF001
+    assert state._pearl_display == [1, 2, 3, 4]  # noqa: SLF001
+    assert state._actions_left == 2  # noqa: SLF001
+    assert state.current_player() == 0
+
+
+def test_molthar_state_take_top_character() -> None:
+    """Taking the top character blind puts the drawn card on the portal."""
+    state = pyspiel.load_game("python_portale_von_molthar").new_initial_state()
+    goblin = _character_index("goblin")
+    lion = _character_index("lion")
+    state._pearl_display = [1, 2, 3, 4]  # noqa: SLF001
+    state._character_display = [lion, lion]  # noqa: SLF001
+    state._character_deck = Counter({goblin: 1, lion: 1})  # noqa: SLF001
+    assert Action.TAKE_CHARACTER_DECK in state.legal_actions()
+
+    state.apply_action(Action.TAKE_CHARACTER_DECK)
+    assert state.chance_outcomes() == sorted([(goblin, 0.5), (lion, 0.5)])
+    label = state.action_to_string(pyspiel.PlayerId.CHANCE, goblin)
+    assert label == "TakeTopCharacter:goblin"
+    state.apply_action(goblin)
+    assert state._portals[0] == [goblin]  # noqa: SLF001
+    assert state._character_display == [lion, lion]  # noqa: SLF001
+    assert state._character_deck == Counter({lion: 1})  # noqa: SLF001
+    assert state._actions_left == 2  # noqa: SLF001
+
+
+def test_molthar_state_deck_takes_need_cards() -> None:
+    """Blind takes are not offered from an empty draw pile."""
+    state = pyspiel.load_game("python_portale_von_molthar").new_initial_state()
+    state._pearl_display = [1, 2, 3, 4]  # noqa: SLF001
+    state._character_display = [0, 0]  # noqa: SLF001
+    state._pearl_deck = Counter()  # noqa: SLF001
+    state._character_deck = Counter()  # noqa: SLF001
+    legal = state.legal_actions()
+    assert Action.TAKE_PEARL_DECK not in legal
+    assert Action.TAKE_CHARACTER_DECK not in legal
+
+
+def test_molthar_state_full_portal_offers_replacements() -> None:
+    """A full portal offers every portal-slot/source replacement instead of plain takes."""
+    state = pyspiel.load_game("python_portale_von_molthar").new_initial_state()
+    goblin = _character_index("goblin")
+    fluffy = _character_index("fluffy")
+    lion = _character_index("lion")
+    state._portals[0] = [goblin, fluffy]  # noqa: SLF001
+    state._pearl_display = [1, 2, 3, 4]  # noqa: SLF001
+    state._character_display = [lion, lion]  # noqa: SLF001
+    legal = state.legal_actions()
+    assert not {
+        Action.TAKE_CHARACTER_0,
+        Action.TAKE_CHARACTER_1,
+        Action.TAKE_CHARACTER_DECK,
+    } & set(legal)
+    replacements = range(Action.REPLACE_PORTAL_0_0, Action.REPLACE_PORTAL_1_DECK + 1)
+    assert set(replacements) <= set(legal)
+    label = state.action_to_string(0, Action.REPLACE_PORTAL_1_0)
+    assert label == "ReplaceCharacter:fluffy->lion"
+    label = state.action_to_string(0, Action.REPLACE_PORTAL_0_DECK)
+    assert label == "ReplaceCharacter:goblin->deck"
+
+
+@pytest.mark.parametrize(
+    ("action", "from_deck"),
+    [
+        (Action.REPLACE_PORTAL_0_0, False),
+        (Action.REPLACE_PORTAL_0_1, False),
+        (Action.REPLACE_PORTAL_0_DECK, True),
+    ],
+)
+def test_molthar_state_replace_portal_discards_the_old_character(
+    action: Action,
+    *,
+    from_deck: bool,
+) -> None:
+    """Replacing discards the chosen portal character and takes the new one."""
+    state = pyspiel.load_game("python_portale_von_molthar").new_initial_state()
+    goblin = _character_index("goblin")
+    fluffy = _character_index("fluffy")
+    lion = _character_index("lion")
+    medusa = _character_index("medusa")
+    state._portals[0] = [goblin, fluffy]  # noqa: SLF001
+    state._pearl_display = [1, 2, 3, 4]  # noqa: SLF001
+    state._character_display = [lion, medusa]  # noqa: SLF001
+    state._character_deck = Counter({goblin: 1})  # noqa: SLF001
+
+    state.apply_action(action)
+    assert state._character_discard == Counter({goblin: 1})  # noqa: SLF001
+    assert state.is_chance_node()  # a deck draw or the display refill
+    state.apply_action(goblin)
+    expected = goblin if from_deck else [lion, medusa][action - Action.REPLACE_PORTAL_0_0]
+    assert state._portals[0] == [fluffy, expected]  # noqa: SLF001
+    assert len(state._character_display) == 2  # noqa: SLF001
+    assert state._actions_left == 2  # noqa: SLF001
+
+
+def test_molthar_state_dumbledore_peek_fixes_the_blind_take() -> None:
+    """A blind character take draws the card Dumbledore peeked at."""
+    state = pyspiel.load_game("python_portale_von_molthar").new_initial_state()
+    goblin = _character_index("goblin")
+    lion = _character_index("lion")
+    state._pearl_display = [1, 2, 3, 4]  # noqa: SLF001
+    state._character_display = [lion, lion]  # noqa: SLF001
+    state._peeked_character = goblin  # noqa: SLF001
+    state._peeked_by = 1  # noqa: SLF001
+
+    state.apply_action(Action.TAKE_CHARACTER_DECK)
+    assert state.chance_outcomes() == [(goblin, 1.0)]
+    state.apply_action(goblin)
+    assert state._portals[0] == [goblin]  # noqa: SLF001
+    assert state._peeked_character is None  # noqa: SLF001
