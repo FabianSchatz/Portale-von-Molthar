@@ -2,16 +2,12 @@
 
 Simplifications with respect to the printed rules (see module constants):
 
-* All 54 character cards are modelled. Because characters can only be taken
-  from the face-up display, Dumbledore's peek only reveals which card refills
-  the character display next.
 * Diamonds are tracked as a plain per-player counter rather than as physical
   character cards drawn from the deck. A diamond pays an explicit requirement
   or raises one paid physical pearl by 1 (Amazon also allows lowering it by 1).
   A pearl already reinterpreted by Rumpelstiltskin or Peter Pan cannot also be
   diamond-modified.
-* Pearl and character cards can only be taken from the face-up displays, never
-  blind from the draw piles.
+* Discarded character cards are never reshuffled into the character deck.
 * Going over the hand limit is resolved by the player, who picks one pearl
   value to drop per decision node at the end of the turn; loading the game
   with ``auto_discard=true`` drops them by a built-in heuristic instead.
@@ -50,10 +46,12 @@ from portale_von_molthar.cards import CHARACTERS, Character
 from portale_von_molthar.decisions import (
     BlueAbilityDecision,
     BlueChoice,
+    DeckTakeStep,
     HandDrawStep,
     PaymentDecision,
     PeekStep,
     PendingStep,
+    Pile,
     RedAbilityDecision,
     RedChoice,
 )
@@ -79,6 +77,9 @@ _PEARL_COPIES: Final = 7
 _PEARL_DISPLAY_SIZE: Final = 4
 _CHAR_DISPLAY_SIZE: Final = 2
 _PORTAL_SLOTS: Final = 2
+# A character is taken from a display slot or, as the last source, blind from the deck.
+_CHAR_DECK_SOURCE: Final = _CHAR_DISPLAY_SIZE
+_CHAR_SOURCES: Final = _CHAR_DISPLAY_SIZE + 1
 _HAND_LIMIT: Final = 5
 _ACTIONS_PER_TURN: Final = 3
 _MAX_REMAINING_ACTIONS: Final = (
@@ -111,101 +112,112 @@ class Action(enum.IntEnum):
     have stable meanings and never consume an additional turn action. Pearl
     conversion and the Reaper and Mad Hatter choices are free moves.
     ``MAD_HATTER_SWAP_<portal>_<display>`` exchanges a portal slot with a
-    character-display slot.
+    character-display slot. ``TAKE_PEARL_DECK`` and ``TAKE_CHARACTER_DECK``
+    take the hidden top card of a draw pile. On a full portal,
+    ``REPLACE_PORTAL_<portal>_<source>`` discards that portal slot's character
+    and takes a new one from a character-display slot or the deck.
     """
 
     TAKE_PEARL_0 = 0
     TAKE_PEARL_1 = 1
     TAKE_PEARL_2 = 2
     TAKE_PEARL_3 = 3
-    REFRESH_PEARLS = 4
-    TAKE_CHARACTER_0 = 5
-    TAKE_CHARACTER_1 = 6
-    ACTIVATE_0 = 7
-    ACTIVATE_1 = 8
-    DISCARD_1 = 9
-    DISCARD_2 = 10
-    DISCARD_3 = 11
-    DISCARD_4 = 12
-    DISCARD_5 = 13
-    DISCARD_6 = 14
-    DISCARD_7 = 15
-    DISCARD_8 = 16
-    PAY_HAND_1 = 17
-    PAY_HAND_2 = 18
-    PAY_HAND_3 = 19
-    PAY_HAND_4 = 20
-    PAY_HAND_5 = 21
-    PAY_HAND_6 = 22
-    PAY_HAND_7 = 23
-    PAY_HAND_8 = 24
-    USE_BARBARIAN_1 = 25
-    USE_BARBARIAN_2 = 26
-    USE_BARBARIAN_3 = 27
-    USE_BARBARIAN_4 = 28
-    USE_BARBARIAN_5 = 29
-    USE_BARBARIAN_6 = 30
-    USE_BARBARIAN_7 = 31
-    USE_FUCHUR_AS_1 = 32
-    USE_FUCHUR_AS_2 = 33
-    USE_FUCHUR_AS_3 = 34
-    USE_FUCHUR_AS_4 = 35
-    USE_FUCHUR_AS_5 = 36
-    USE_FUCHUR_AS_6 = 37
-    USE_FUCHUR_AS_7 = 38
-    USE_FUCHUR_AS_8 = 39
-    USE_PHOENIX_AS_8 = 40
-    PAY_HAND_3_AS_1_RUMPELSTILTSKIN = 41
-    PAY_HAND_3_AS_2_RUMPELSTILTSKIN = 42
-    PAY_HAND_3_AS_4_RUMPELSTILTSKIN = 43
-    PAY_HAND_3_AS_5_RUMPELSTILTSKIN = 44
-    PAY_HAND_3_AS_6_RUMPELSTILTSKIN = 45
-    PAY_HAND_3_AS_7_RUMPELSTILTSKIN = 46
-    PAY_HAND_3_AS_8_RUMPELSTILTSKIN = 47
-    PAY_HAND_1_AS_8_PETER_PAN = 48
-    ACTIVATE_NEIGHBOR_0 = 49
-    ACTIVATE_NEIGHBOR_1 = 50
-    KEEP_NONE = 51
-    KEEP_3 = 52
-    KEEP_4 = 53
-    KEEP_5 = 54
-    STEAL_1 = 55
-    STEAL_2 = 56
-    STEAL_3 = 57
-    STEAL_4 = 58
-    STEAL_5 = 59
-    STEAL_6 = 60
-    STEAL_7 = 61
-    STEAL_8 = 62
-    DISCARD_PORTAL_0 = 63
-    DISCARD_PORTAL_1 = 64
-    TARGET_PLAYER_0 = 65
-    TARGET_PLAYER_1 = 66
-    TARGET_PLAYER_2 = 67
-    TARGET_PLAYER_3 = 68
-    TARGET_PLAYER_4 = 69
-    PAY_HAND_1_PLUS_DIAMOND = 70
-    PAY_HAND_2_PLUS_DIAMOND = 71
-    PAY_HAND_3_PLUS_DIAMOND = 72
-    PAY_HAND_4_PLUS_DIAMOND = 73
-    PAY_HAND_5_PLUS_DIAMOND = 74
-    PAY_HAND_6_PLUS_DIAMOND = 75
-    PAY_HAND_7_PLUS_DIAMOND = 76
-    PAY_HAND_2_MINUS_DIAMOND_AMAZON = 77
-    PAY_HAND_3_MINUS_DIAMOND_AMAZON = 78
-    PAY_HAND_4_MINUS_DIAMOND_AMAZON = 79
-    PAY_HAND_5_MINUS_DIAMOND_AMAZON = 80
-    PAY_HAND_6_MINUS_DIAMOND_AMAZON = 81
-    PAY_HAND_7_MINUS_DIAMOND_AMAZON = 82
-    PAY_HAND_8_MINUS_DIAMOND_AMAZON = 83
-    CONVERT_2_TO_DIAMOND_SNOW_WHITE = 84
-    REAPER_KEEP_HAND = 85
-    REAPER_REDRAW_HAND = 86
-    MAD_HATTER_SKIP = 87
-    MAD_HATTER_SWAP_0_0 = 88
-    MAD_HATTER_SWAP_0_1 = 89
-    MAD_HATTER_SWAP_1_0 = 90
-    MAD_HATTER_SWAP_1_1 = 91
+    TAKE_PEARL_DECK = 4
+    REFRESH_PEARLS = 5
+    TAKE_CHARACTER_0 = 6
+    TAKE_CHARACTER_1 = 7
+    TAKE_CHARACTER_DECK = 8
+    REPLACE_PORTAL_0_0 = 9
+    REPLACE_PORTAL_0_1 = 10
+    REPLACE_PORTAL_0_DECK = 11
+    REPLACE_PORTAL_1_0 = 12
+    REPLACE_PORTAL_1_1 = 13
+    REPLACE_PORTAL_1_DECK = 14
+    ACTIVATE_0 = 15
+    ACTIVATE_1 = 16
+    DISCARD_1 = 17
+    DISCARD_2 = 18
+    DISCARD_3 = 19
+    DISCARD_4 = 20
+    DISCARD_5 = 21
+    DISCARD_6 = 22
+    DISCARD_7 = 23
+    DISCARD_8 = 24
+    PAY_HAND_1 = 25
+    PAY_HAND_2 = 26
+    PAY_HAND_3 = 27
+    PAY_HAND_4 = 28
+    PAY_HAND_5 = 29
+    PAY_HAND_6 = 30
+    PAY_HAND_7 = 31
+    PAY_HAND_8 = 32
+    USE_BARBARIAN_1 = 33
+    USE_BARBARIAN_2 = 34
+    USE_BARBARIAN_3 = 35
+    USE_BARBARIAN_4 = 36
+    USE_BARBARIAN_5 = 37
+    USE_BARBARIAN_6 = 38
+    USE_BARBARIAN_7 = 39
+    USE_FUCHUR_AS_1 = 40
+    USE_FUCHUR_AS_2 = 41
+    USE_FUCHUR_AS_3 = 42
+    USE_FUCHUR_AS_4 = 43
+    USE_FUCHUR_AS_5 = 44
+    USE_FUCHUR_AS_6 = 45
+    USE_FUCHUR_AS_7 = 46
+    USE_FUCHUR_AS_8 = 47
+    USE_PHOENIX_AS_8 = 48
+    PAY_HAND_3_AS_1_RUMPELSTILTSKIN = 49
+    PAY_HAND_3_AS_2_RUMPELSTILTSKIN = 50
+    PAY_HAND_3_AS_4_RUMPELSTILTSKIN = 51
+    PAY_HAND_3_AS_5_RUMPELSTILTSKIN = 52
+    PAY_HAND_3_AS_6_RUMPELSTILTSKIN = 53
+    PAY_HAND_3_AS_7_RUMPELSTILTSKIN = 54
+    PAY_HAND_3_AS_8_RUMPELSTILTSKIN = 55
+    PAY_HAND_1_AS_8_PETER_PAN = 56
+    ACTIVATE_NEIGHBOR_0 = 57
+    ACTIVATE_NEIGHBOR_1 = 58
+    KEEP_NONE = 59
+    KEEP_3 = 60
+    KEEP_4 = 61
+    KEEP_5 = 62
+    STEAL_1 = 63
+    STEAL_2 = 64
+    STEAL_3 = 65
+    STEAL_4 = 66
+    STEAL_5 = 67
+    STEAL_6 = 68
+    STEAL_7 = 69
+    STEAL_8 = 70
+    DISCARD_PORTAL_0 = 71
+    DISCARD_PORTAL_1 = 72
+    TARGET_PLAYER_0 = 73
+    TARGET_PLAYER_1 = 74
+    TARGET_PLAYER_2 = 75
+    TARGET_PLAYER_3 = 76
+    TARGET_PLAYER_4 = 77
+    PAY_HAND_1_PLUS_DIAMOND = 78
+    PAY_HAND_2_PLUS_DIAMOND = 79
+    PAY_HAND_3_PLUS_DIAMOND = 80
+    PAY_HAND_4_PLUS_DIAMOND = 81
+    PAY_HAND_5_PLUS_DIAMOND = 82
+    PAY_HAND_6_PLUS_DIAMOND = 83
+    PAY_HAND_7_PLUS_DIAMOND = 84
+    PAY_HAND_2_MINUS_DIAMOND_AMAZON = 85
+    PAY_HAND_3_MINUS_DIAMOND_AMAZON = 86
+    PAY_HAND_4_MINUS_DIAMOND_AMAZON = 87
+    PAY_HAND_5_MINUS_DIAMOND_AMAZON = 88
+    PAY_HAND_6_MINUS_DIAMOND_AMAZON = 89
+    PAY_HAND_7_MINUS_DIAMOND_AMAZON = 90
+    PAY_HAND_8_MINUS_DIAMOND_AMAZON = 91
+    CONVERT_2_TO_DIAMOND_SNOW_WHITE = 92
+    REAPER_KEEP_HAND = 93
+    REAPER_REDRAW_HAND = 94
+    MAD_HATTER_SKIP = 95
+    MAD_HATTER_SWAP_0_0 = 96
+    MAD_HATTER_SWAP_0_1 = 97
+    MAD_HATTER_SWAP_1_0 = 98
+    MAD_HATTER_SWAP_1_1 = 99
 
 
 _HAND_PAYMENT_ACTIONS: Final = {value: Action.PAY_HAND_1 + value - 1 for value in _PEARL_VALUES}
@@ -346,20 +358,19 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
         return self._cur_player
 
     def chance_outcomes(self) -> list[tuple[int, float]]:
-        """Return (outcome, probability) pairs for the pending display refill.
+        """Return (outcome, probability) pairs for the pending draw.
 
         Cards are drawn as a weighted choice over the *remaining counts* of the
         deck, which is equivalent to drawing from a shuffled pile but avoids
-        modelling the pile order.
+        modelling the pile order. A character peeked at by Dumbledore is the
+        top card, so it is the next character drawn, whether it refills the
+        display or is taken blind.
         """
         deck = self._pending_refill()
         if deck is None:
             raise ValueError("chance_outcomes called on a non-chance node")
-        if (
-            deck is self._character_deck
-            and self._peeked_character is not None
-            and len(self._character_display) < _CHAR_DISPLAY_SIZE
-        ):
+        # A peek only starts while nothing is peeked, so this never forces the peek itself.
+        if deck is self._character_deck and self._peeked_character is not None:
             return [(self._peeked_character, 1.0)]
         total = deck.total()
         return [(key, count / total) for key, count in sorted(deck.items()) if count]
@@ -535,10 +546,9 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
         actions: list[int] = list(range(len(self._pearl_display)))
         if self._pearl_display:
             actions.append(Action.REFRESH_PEARLS)
-        if len(self._portals[player]) < _PORTAL_SLOTS:
-            actions.extend(
-                Action.TAKE_CHARACTER_0 + slot for slot in range(len(self._character_display))
-            )
+        if self._pearl_deck.total():
+            actions.append(Action.TAKE_PEARL_DECK)
+        actions.extend(self._character_take_actions(player))
         for slot, card in enumerate(self._portals[player]):
             character = CHARACTERS[card]
             if self._activation_plans(player, character):
@@ -556,6 +566,24 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
                 actions.append(_CONVERSION_ACTIONS[(card_id, ability.printed_value)])
         # A player is never stuck: refreshing an empty display is a legal pass.
         return sorted(actions) if actions else [int(Action.REFRESH_PEARLS)]
+
+    def _character_take_actions(self, player: int) -> list[int]:
+        """Return the actions putting a display or deck character on `player`'s portal.
+
+        A portal with a free slot takes the character directly. A full portal
+        first discards one of its characters, so every portal slot is combined
+        with every available source.
+        """
+        sources = list(range(len(self._character_display)))
+        if self._character_deck.total():
+            sources.append(_CHAR_DECK_SOURCE)
+        if len(self._portals[player]) < _PORTAL_SLOTS:
+            return [self._take_character_action(source) for source in sources]
+        return [
+            int(Action.REPLACE_PORTAL_0_0 + portal_slot * _CHAR_SOURCES + source)
+            for portal_slot in range(_PORTAL_SLOTS)
+            for source in sources
+        ]
 
     def _apply_action(self, action: int) -> None:
         """Apply `action`, which is a chance outcome on chance nodes."""
@@ -578,7 +606,10 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
         # Player decisions block the reshuffle (Puss in Boots takes back a
         # discarded pearl); chance steps may need the reshuffled cards.
         step = self._pending_step
-        player_decision = step is not None and not isinstance(step, (HandDrawStep, PeekStep))
+        player_decision = step is not None and not isinstance(
+            step,
+            (HandDrawStep, DeckTakeStep, PeekStep),
+        )
         if not player_decision and not self._pearl_deck.total():
             # ponytail: instant reshuffle of the discard pile; the real game
             # shuffles once, which only matters for card counting.
@@ -613,11 +644,24 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
             label = self._chance_label(action)
         elif action <= Action.TAKE_PEARL_3:
             label = f"TakePearl:{self._pearl_display[action]}"
+        elif action == Action.TAKE_PEARL_DECK:
+            label = "TakePearlDeck"
         elif action == Action.REFRESH_PEARLS:
             label = "RefreshPearls"
         elif action <= Action.TAKE_CHARACTER_1:
             slot = action - Action.TAKE_CHARACTER_0
             label = f"TakeCharacter:{CHARACTERS[self._character_display[slot]].id}"
+        elif action == Action.TAKE_CHARACTER_DECK:
+            label = "TakeCharacterDeck"
+        elif action <= Action.REPLACE_PORTAL_1_DECK:
+            portal_slot, source = divmod(action - Action.REPLACE_PORTAL_0_0, _CHAR_SOURCES)
+            old_id = CHARACTERS[self._portals[player][portal_slot]].id
+            new_id = (
+                "deck"
+                if source == _CHAR_DECK_SOURCE
+                else CHARACTERS[self._character_display[source]].id
+            )
+            label = f"ReplaceCharacter:{old_id}->{new_id}"
         elif action <= Action.ACTIVATE_1:
             slot = action - Action.ACTIVATE_0
             label = f"Activate:{CHARACTERS[self._portals[player][slot]].id}"
@@ -631,11 +675,19 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
         return label
 
     def _chance_label(self, action: int) -> str:
-        """Return the label for a chance outcome at the pending draw."""
+        """Return the label for a chance outcome at the pending draw.
+
+        The branches mirror the resolution order of `_draw`.
+        """
+        blind_take = isinstance(self._pending_step, DeckTakeStep)
         if self._pending_refill() is self._pearl_deck:
-            return f"DealPearl:{action}"
+            if len(self._pearl_display) < _PEARL_DISPLAY_SIZE or not blind_take:
+                return f"DealPearl:{action}"
+            return f"TakeTopPearl:{action}"
         if len(self._character_display) < _CHAR_DISPLAY_SIZE:
             return f"DealCharacter:{CHARACTERS[action].id}"
+        if blind_take:
+            return f"TakeTopCharacter:{CHARACTERS[action].id}"
         return f"PeekCharacter:{CHARACTERS[action].id}"
 
     def _choice_label(self, action: int) -> str:
@@ -659,9 +711,11 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
         """Return the deck that must be drawn from before the next player move.
 
         Display refills come first, then a pending chance step (Reaper hand
-        draw or Dumbledore peek). A hand draw always finds cards because its
-        player's discarded hand is reshuffled in when the deck runs out, and a
-        peek is dropped when a refill empties the character deck.
+        draw, blind take from a draw pile, or Dumbledore peek). A hand draw
+        always finds cards because its player's discarded hand is reshuffled
+        in when the deck runs out, a blind take is only offered while its pile
+        holds cards, and a peek is dropped when a refill empties the character
+        deck.
         """
         if len(self._pearl_display) < _PEARL_DISPLAY_SIZE and self._pearl_deck.total():
             return self._pearl_deck
@@ -669,6 +723,9 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
             return self._character_deck
         if isinstance(self._pending_step, HandDrawStep):
             return self._pearl_deck
+        if isinstance(self._pending_step, DeckTakeStep):
+            pearl = self._pending_step.pile is Pile.PEARL
+            return self._pearl_deck if pearl else self._character_deck
         if isinstance(self._pending_step, PeekStep):
             return self._character_deck
         return None
@@ -696,6 +753,16 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
                 return
             self._pending_step = None
             self._finish_turn()
+        elif isinstance(step, DeckTakeStep):
+            deck[outcome] -= 1
+            if step.pile is Pile.PEARL:
+                self._hands[step.player][outcome] += 1
+            else:
+                self._portals[step.player].append(outcome)
+                self._peeked_character = None
+                self._peeked_by = None
+            self._pending_step = None
+            self._end_action()  # the blind take was the action that started this draw
         elif isinstance(step, PeekStep):
             # Peeking leaves the card on top of the deck.
             self._peeked_character = outcome
@@ -711,13 +778,19 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
         player = self._cur_player
         if action <= Action.TAKE_PEARL_3:
             self._hands[player][self._pearl_display.pop(action)] += 1
+        elif action == Action.TAKE_PEARL_DECK:
+            self._pending_step = DeckTakeStep(player, Pile.PEARL)
         elif action == Action.REFRESH_PEARLS:
             self._pearl_discard += Counter(self._pearl_display)
             self._pearl_display.clear()
         elif action <= Action.TAKE_CHARACTER_1:
-            self._portals[player].append(
-                self._character_display.pop(action - Action.TAKE_CHARACTER_0),
-            )
+            self._take_character(player, action - Action.TAKE_CHARACTER_0)
+        elif action == Action.TAKE_CHARACTER_DECK:
+            self._take_character(player, _CHAR_DECK_SOURCE)
+        elif action <= Action.REPLACE_PORTAL_1_DECK:
+            portal_slot, source = divmod(action - Action.REPLACE_PORTAL_0_0, _CHAR_SOURCES)
+            self._character_discard[self._portals[player].pop(portal_slot)] += 1
+            self._take_character(player, source)
         elif action <= Action.ACTIVATE_1:
             self._activate(player, player, action - Action.ACTIVATE_0)
         elif Action.ACTIVATE_NEIGHBOR_0 <= action <= Action.ACTIVATE_NEIGHBOR_1:
@@ -726,6 +799,36 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
         else:
             message = f"action {action} is not a normal turn action"
             raise ValueError(message)
+
+    @staticmethod
+    def _take_character_action(source: int) -> int:
+        """Return the action putting a character from `source` on a portal with a free slot.
+
+        Args:
+            source: Character-display slot, or `_CHAR_DECK_SOURCE` for the deck.
+
+        Returns:
+            ``TAKE_CHARACTER_<slot>`` for a display slot, otherwise ``TAKE_CHARACTER_DECK``.
+        """
+        if source == _CHAR_DECK_SOURCE:
+            return int(Action.TAKE_CHARACTER_DECK)
+        return int(Action.TAKE_CHARACTER_0 + source)
+
+    def _take_character(self, player: int, source: int) -> None:
+        """Put a character from `source` onto `player`'s portal.
+
+        A display card moves immediately and the display is refilled by the
+        next chance node. A deck card is unknown, so a chance step resolves it
+        and finishes the action.
+
+        Args:
+            player: Player whose portal receives the character.
+            source: Character-display slot, or `_CHAR_DECK_SOURCE` for the deck.
+        """
+        if source == _CHAR_DECK_SOURCE:
+            self._pending_step = DeckTakeStep(player, Pile.CHARACTER)
+        else:
+            self._portals[player].append(self._character_display.pop(source))
 
     def _activate(self, player: int, target_owner: int, slot: int) -> None:
         """Start paying for a character on `target_owner`'s portal.

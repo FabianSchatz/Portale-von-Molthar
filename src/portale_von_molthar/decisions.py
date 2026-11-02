@@ -172,6 +172,34 @@ class HandDrawStep:
         return _CHANCE
 
 
+class Pile(StrEnum):
+    """Draw pile a player may take the hidden top card from."""
+
+    PEARL = "pearl"
+    CHARACTER = "character"
+
+
+@dataclass(frozen=True, slots=True)
+class DeckTakeStep:
+    """Chance draw resolving a blind take of the top card of a draw pile.
+
+    The taken pearl goes to the player's hand and the taken character onto
+    their portal. Resolving the draw consumes the turn action that started it.
+
+    Attributes:
+        player: Player receiving the drawn card.
+        pile: Draw pile the card is taken from.
+    """
+
+    player: int
+    pile: Pile
+
+    @property
+    def actor(self) -> int:
+        """Return the OpenSpiel chance player, who resolves this step."""
+        return _CHANCE
+
+
 @dataclass(frozen=True, slots=True)
 class PeekStep:
     """Chance draw privately revealing the top character card (Dumbledore).
@@ -189,7 +217,12 @@ class PeekStep:
 
 
 PendingStep: TypeAlias = (
-    PaymentDecision | RedAbilityDecision | BlueAbilityDecision | HandDrawStep | PeekStep
+    PaymentDecision
+    | RedAbilityDecision
+    | BlueAbilityDecision
+    | HandDrawStep
+    | DeckTakeStep
+    | PeekStep
 )
 
 
