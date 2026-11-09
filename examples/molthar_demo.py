@@ -1,8 +1,8 @@
 """Plays a random game of the simplified *Portale von Molthar*.
 
 Same pattern as tic_tac_toe_demo.py, but for our own game: chance nodes
-(display refills) are interleaved automatically with the two players'
-action-taking turns.
+(display refills) are interleaved automatically with the players'
+action-taking turns. Load ``python_portale_von_molthar(players=4)`` for more players.
 """
 
 import random
@@ -32,5 +32,5 @@ def play_random_game(seed: int | None = None) -> list[float]:
 
 
 if __name__ == "__main__":
-    returns = play_random_game(seed=0)
+    returns = play_random_game(seed=1)
     print(f"\nFinal returns: {returns}")

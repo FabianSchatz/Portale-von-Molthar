@@ -10,8 +10,6 @@ from portale_von_molthar.cards import CHARACTERS
 from portale_von_molthar.decisions import RedChoice
 from portale_von_molthar.molthar import (
     _HAND_LIMIT,
-    _MAX_NODES,
-    _NUM_PLAYERS,
     _PEARL_COPIES,
     _PEARL_VALUES,
     Action,
@@ -31,10 +29,10 @@ def _resolve_chance(state: pyspiel.State) -> None:
         state.apply_action(state.chance_outcomes()[0][0])
 
 
-def _play_random_game(seed: int, *, auto_discard: bool = False) -> pyspiel.State:
+def _play_random_game(seed: int, *, auto_discard: bool = False, players: int = 2) -> pyspiel.State:
     """Play one game with uniformly random actions and return the terminal state."""
     rng = np.random.default_rng(seed)
-    name = f"python_portale_von_molthar(auto_discard={str(auto_discard).lower()})"
+    name = f"python_portale_von_molthar(auto_discard={str(auto_discard).lower()},players={players})"
     state = pyspiel.load_game(name).new_initial_state()
     while not state.is_terminal():
         if state.is_chance_node():
@@ -59,14 +57,17 @@ def _assert_pearls_conserved(state: pyspiel.State) -> None:
     assert total == _TOTAL_PEARLS
 
 
+@pytest.mark.parametrize("players", [2, 3, 5])
 @pytest.mark.parametrize("auto_discard", [False, True])
 @pytest.mark.parametrize("seed", range(10))
-def test_molthar_game_random_playthrough(seed: int, *, auto_discard: bool) -> None:
-    state = _play_random_game(seed, auto_discard=auto_discard)
+def test_molthar_game_random_playthrough(seed: int, *, auto_discard: bool, players: int) -> None:
+    state = _play_random_game(seed, auto_discard=auto_discard, players=players)
     assert state.is_terminal()
-    assert sum(state.returns()) == 0.0
+    assert len(state.returns()) == players
+    assert sum(state.returns()) == pytest.approx(0.0)
     # Some random players fill their portals with cards they cannot activate.
-    assert max(state.scores) >= 12 or state._nodes == _MAX_NODES  # noqa: SLF001
+    max_nodes = state.get_game().max_game_length()
+    assert max(state.scores) >= 12 or state._nodes == max_nodes  # noqa: SLF001
     # Scoring ends at a turn boundary; the node cap can interrupt a turn.
     if max(state.scores) >= 12:
         for player, hand in enumerate(state._hands):  # noqa: SLF001
@@ -76,10 +77,125 @@ def test_molthar_game_random_playthrough(seed: int, *, auto_discard: bool) -> No
 def test_molthar_game_registration() -> None:
     game = pyspiel.load_game("python_portale_von_molthar")
     assert game.num_players() == 2
-    assert game.num_distinct_actions() == 100
+    assert game.num_distinct_actions() == 102
     state = game.new_initial_state()
     assert state.is_chance_node()
     assert len(state.observation_tensor(0)) == game.observation_tensor_shape()[0]
+
+
+@pytest.mark.parametrize("players", [2, 3, 4, 5])
+def test_molthar_game_players_parameter(players: int) -> None:
+    game = pyspiel.load_game(f"python_portale_von_molthar(players={players})")
+    assert game.num_players() == players
+    state = game.new_initial_state()
+    assert len(state._hands) == players  # noqa: SLF001
+    for player in range(players):
+        assert len(state.observation_tensor(player)) == game.observation_tensor_shape()[0]
+
+
+@pytest.mark.parametrize("players", [1, 6])
+def test_molthar_game_players_parameter_out_of_range(players: int) -> None:
+    with pytest.raises(ValueError, match="players"):
+        pyspiel.load_game(f"python_portale_von_molthar(players={players})")
+
+
+@pytest.mark.parametrize(
+    ("scores", "diamonds", "expected"),
+    [
+        ([12, 5], [0, 0], [1.0, -1.0]),
+        ([7, 7], [0, 0], [0.0, 0.0]),
+        ([12, 3, 5], [0, 0, 0], [1.0, -0.5, -0.5]),
+        ([12, 12, 5, 1], [0, 0, 0, 0], [0.5, 0.5, -0.5, -0.5]),
+        ([4, 4, 4], [0, 0, 0], [0.0, 0.0, 0.0]),
+        ([12, 12], [1, 2], [-1.0, 1.0]),
+        ([12, 12, 5], [3, 3, 9], [0.5, 0.5, -1.0]),
+        ([12, 12, 12, 5], [1, 2, 2, 0], [-0.5, 0.5, 0.5, -0.5]),
+    ],
+)
+def test_molthar_state_returns(
+    scores: list[int],
+    diamonds: list[int],
+    expected: list[float],
+) -> None:
+    """The best (score, diamonds) rank shares +1 and everybody else shares -1."""
+    game = pyspiel.load_game(f"python_portale_von_molthar(players={len(scores)})")
+    state = game.new_initial_state()
+    state._scores = scores  # noqa: SLF001
+    state._diamonds = diamonds  # noqa: SLF001
+    state._game_over = True  # noqa: SLF001
+    assert state.returns() == pytest.approx(expected)
+
+
+@pytest.mark.parametrize("players", [2, 3, 5])
+def test_molthar_state_end_turn_final_turns(players: int) -> None:
+    """After the finisher's turn, the others play twice and the finisher once more."""
+    game = pyspiel.load_game(f"python_portale_von_molthar(players={players})")
+    state = game.new_initial_state()
+    finisher = 1
+    state._cur_player = finisher  # noqa: SLF001
+    state._scores[finisher] = 12  # noqa: SLF001
+
+    state._end_turn()  # noqa: SLF001
+    turns = []
+    while not state.is_terminal():
+        turns.append(state._cur_player)  # noqa: SLF001
+        state._end_turn()  # noqa: SLF001
+
+    assert turns == [(finisher + offset) % players for offset in range(1, 2 * players)]
+    assert turns.count(finisher) == 1
+    assert state._cur_player == finisher  # noqa: SLF001
+
+
+def test_molthar_state_end_turn_ignores_later_finishers() -> None:
+    """Only the first player to reach the target starts the final turns."""
+    game = pyspiel.load_game("python_portale_von_molthar(players=3)")
+    state = game.new_initial_state()
+    state._scores[0] = 12  # noqa: SLF001
+    state._end_turn()  # noqa: SLF001
+    assert state._final_turns == 5  # noqa: SLF001
+    state._scores[1] = 12  # noqa: SLF001
+    state._end_turn()  # noqa: SLF001
+    assert state._final_turns == 4  # noqa: SLF001
+    assert "final_turns=4" in state.observation_string(0)
+
+
+def test_molthar_state_previous_neighbor_can_activate_irrlicht() -> None:
+    """With three players, Irrlicht is also payable from the previous player's portal."""
+    game = pyspiel.load_game("python_portale_von_molthar(players=3)")
+    state = game.new_initial_state()
+    card = _character_index("irrlicht_1")
+    state._portals[1] = [card]  # noqa: SLF001
+    state._portals[2] = [card]  # noqa: SLF001
+    state._hands[0] = Counter({3: 3})  # noqa: SLF001
+    state._pearl_display = [1, 2, 7, 8]  # noqa: SLF001
+    state._character_display = [card, card]  # noqa: SLF001
+
+    legal = state.legal_actions()
+    assert Action.ACTIVATE_NEIGHBOR_0 in legal
+    assert Action.ACTIVATE_PREVIOUS_NEIGHBOR_0 in legal
+    label = state.action_to_string(0, Action.ACTIVATE_PREVIOUS_NEIGHBOR_0)
+    assert label == "ActivatePreviousNeighbor:irrlicht_1"
+    state.apply_action(Action.ACTIVATE_PREVIOUS_NEIGHBOR_0)
+
+    assert state._portals[2] == []  # noqa: SLF001
+    assert state._portals[1] == [card]  # noqa: SLF001
+    assert state._activated_characters[0] == [card]  # noqa: SLF001
+    assert state.scores == [3, 0, 0]
+
+
+def test_molthar_state_two_players_have_no_previous_neighbor_action() -> None:
+    """With two players both neighbors are the same, so only one action is offered."""
+    game = pyspiel.load_game("python_portale_von_molthar")
+    state = game.new_initial_state()
+    card = _character_index("irrlicht_1")
+    state._portals[1] = [card]  # noqa: SLF001
+    state._hands[0] = Counter({3: 3})  # noqa: SLF001
+    state._pearl_display = [1, 2, 7, 8]  # noqa: SLF001
+    state._character_display = [card, card]  # noqa: SLF001
+
+    legal = state.legal_actions()
+    assert Action.ACTIVATE_NEIGHBOR_0 in legal
+    assert Action.ACTIVATE_PREVIOUS_NEIGHBOR_0 not in legal
 
 
 def test_molthar_state_activation_scores() -> None:
@@ -526,7 +642,7 @@ def test_molthar_state_observation_tracks_selected_virtual_source() -> None:
     state.apply_action(Action.ACTIVATE_0)
     state.apply_action(Action.USE_BARBARIAN_1)
     observation = state.observation_tensor(0)
-    tail = 1 + _NUM_PLAYERS + 8 + len(RedChoice)
+    tail = 1 + game.num_players() + 8 + len(RedChoice)
     virtual_sources = observation[-(len(CHARACTERS) + tail) : -tail]
     assert virtual_sources[barbarian_one] == 1.0
     assert sum(virtual_sources) == 1.0

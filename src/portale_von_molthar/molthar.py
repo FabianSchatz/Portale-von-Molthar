@@ -11,11 +11,15 @@ Simplifications with respect to the printed rules (see module constants):
 * Going over the hand limit is resolved by the player, who picks one pearl
   value to drop per decision node at the end of the turn; loading the game
   with ``auto_discard=true`` drops them by a built-in heuristic instead.
-* Two players; the retail game supports two to five.
+* Once a player ends a turn with at least 12 points, every other player gets
+  two more turns and that player one more; the game stops right before the
+  finisher's second extra turn. The highest score wins, ties go to the player
+  with more diamonds, and players still tied share the win.
 
+Two to five players are supported via the ``players`` parameter (default 2).
 Importing this module registers the game under the short name
 ``python_portale_von_molthar`` so that it can be created with
-``pyspiel.load_game("python_portale_von_molthar")``.
+``pyspiel.load_game("python_portale_von_molthar(players=4)")``.
 """
 
 import enum
@@ -71,7 +75,9 @@ from portale_von_molthar.requirements import (
     leaf_requirements,
 )
 
-_NUM_PLAYERS: Final = 2
+_MIN_PLAYERS: Final = 2
+_MAX_PLAYERS: Final = 5
+_DEFAULT_PLAYERS: Final = 2
 _PEARL_VALUES: Final = tuple(range(1, 9))
 _PEARL_COPIES: Final = 7
 _PEARL_DISPLAY_SIZE: Final = 4
@@ -97,10 +103,11 @@ _MAX_REMAINING_ACTIONS: Final = (
     + 1
 )  # Dementor can add one action to the next player's turn.
 _TARGET_POINTS: Final = 12
-# Safety net: the simplified game has no forced progress, so two players who
-# only ever "pass" would loop forever. Discards add up to three more nodes per
-# turn, so a random game needs noticeably more of them than the actions alone.
-_MAX_NODES: Final = 20000
+# Safety net: the simplified game has no forced progress, so players who only
+# ever "pass" would loop forever. Discards add up to three more nodes per turn,
+# so a random game needs noticeably more of them than the actions alone. The
+# cap scales with the player count because every player needs their own turns.
+_MAX_NODES_PER_PLAYER: Final = 10000
 _AbilityT = TypeVar("_AbilityT")
 
 
@@ -116,6 +123,9 @@ class Action(enum.IntEnum):
     take the hidden top card of a draw pile. On a full portal,
     ``REPLACE_PORTAL_<portal>_<source>`` discards that portal slot's character
     and takes a new one from a character-display slot or the deck.
+    ``ACTIVATE_NEIGHBOR_<slot>`` targets the next player's portal and
+    ``ACTIVATE_PREVIOUS_NEIGHBOR_<slot>`` the previous player's portal; the
+    latter is only offered with three or more players, when the two differ.
     """
 
     TAKE_PEARL_0 = 0
@@ -218,8 +228,18 @@ class Action(enum.IntEnum):
     MAD_HATTER_SWAP_0_1 = 97
     MAD_HATTER_SWAP_1_0 = 98
     MAD_HATTER_SWAP_1_1 = 99
+    ACTIVATE_PREVIOUS_NEIGHBOR_0 = 100
+    ACTIVATE_PREVIOUS_NEIGHBOR_1 = 101
 
 
+_NEIGHBOR_ACTIONS: Final = frozenset(
+    {
+        Action.ACTIVATE_NEIGHBOR_0,
+        Action.ACTIVATE_NEIGHBOR_1,
+        Action.ACTIVATE_PREVIOUS_NEIGHBOR_0,
+        Action.ACTIVATE_PREVIOUS_NEIGHBOR_1,
+    },
+)
 _HAND_PAYMENT_ACTIONS: Final = {value: Action.PAY_HAND_1 + value - 1 for value in _PEARL_VALUES}
 _VIRTUAL_PAYMENT_ACTIONS: Final = {
     **{(f"barbarian_{value}", value): Action.USE_BARBARIAN_1 + value - 1 for value in range(1, 8)},
@@ -262,22 +282,13 @@ _GAME_TYPE: Final = pyspiel.GameType(
     information=pyspiel.GameType.Information.IMPERFECT_INFORMATION,
     utility=pyspiel.GameType.Utility.ZERO_SUM,
     reward_model=pyspiel.GameType.RewardModel.TERMINAL,
-    max_num_players=_NUM_PLAYERS,
-    min_num_players=_NUM_PLAYERS,
+    max_num_players=_MAX_PLAYERS,
+    min_num_players=_MIN_PLAYERS,
     provides_information_state_string=False,
     provides_information_state_tensor=False,
     provides_observation_string=True,
     provides_observation_tensor=True,
-    parameter_specification={"auto_discard": False},
-)
-_GAME_INFO: Final = pyspiel.GameInfo(
-    num_distinct_actions=len(Action),
-    max_chance_outcomes=max(len(_PEARL_VALUES), len(CHARACTERS)),
-    num_players=_NUM_PLAYERS,
-    min_utility=-1.0,
-    max_utility=1.0,
-    utility_sum=0.0,
-    max_game_length=_MAX_NODES,
+    parameter_specification={"auto_discard": False, "players": _DEFAULT_PLAYERS},
 )
 
 
@@ -286,6 +297,8 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
 
     def __init__(self, game: pyspiel.Game) -> None:
         super().__init__(game)
+        self._num_players: int = game.num_players()
+        self._max_nodes: int = game.max_game_length()
         self._pearl_deck: Counter[int] = Counter(dict.fromkeys(_PEARL_VALUES, _PEARL_COPIES))
         self._pearl_discard: Counter[int] = Counter()
         self._pearl_display: list[int] = []
@@ -294,21 +307,23 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
         )
         self._character_display: list[int] = []
         self._character_discard: Counter[int] = Counter()
-        self._hands: list[Counter[int]] = [Counter() for _ in range(_NUM_PLAYERS)]
-        self._portals: list[list[int]] = [[] for _ in range(_NUM_PLAYERS)]
-        self._activated_characters: list[list[int]] = [[] for _ in range(_NUM_PLAYERS)]
-        self._scores: list[int] = [0] * _NUM_PLAYERS
-        self._diamonds: list[int] = [0] * _NUM_PLAYERS
+        self._hands: list[Counter[int]] = [Counter() for _ in range(self._num_players)]
+        self._portals: list[list[int]] = [[] for _ in range(self._num_players)]
+        self._activated_characters: list[list[int]] = [[] for _ in range(self._num_players)]
+        self._scores: list[int] = [0] * self._num_players
+        self._diamonds: list[int] = [0] * self._num_players
         self._auto_discard = bool(game.get_parameters().get("auto_discard", False))
         self._cur_player = 0
         # The player decision or chance draw (Reaper, Dumbledore) to resolve next.
         self._pending_step: PendingStep | None = None
         self._actions_left = _ACTIONS_PER_TURN
-        self._next_turn_bonus: list[int] = [0] * _NUM_PLAYERS
+        self._next_turn_bonus: list[int] = [0] * self._num_players
         # Top character card known to `_peeked_by`; it is the next card drawn.
         self._peeked_character: int | None = None
         self._peeked_by: int | None = None
         self._nodes = 0
+        # Turns still to be played once a player reached the target, else None.
+        self._final_turns: int | None = None
         self._game_over = False
 
     # region properties
@@ -328,7 +343,7 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
             f"pearls={self._pearl_display} deck={self._pearl_deck.total()}",
             f"characters={[CHARACTERS[card].id for card in self._character_display]}",
         ]
-        for player in range(_NUM_PLAYERS):
+        for player in range(self._num_players):
             portal = [CHARACTERS[card].id for card in self._portals[player]]
             activated = [CHARACTERS[card].id for card in self._activated_characters[player]]
             hand = sorted(self._hands[player].elements())
@@ -380,21 +395,30 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
         return self._game_over
 
     def returns(self) -> list[float]:
-        """Return the zero-sum payoff: +1 for the higher score, 0 on a draw."""
-        if not self._game_over or self._scores[0] == self._scores[1]:
-            return [0.0, 0.0]
-        winner = 0 if self._scores[0] > self._scores[1] else 1
-        return [1.0 if player == winner else -1.0 for player in range(_NUM_PLAYERS)]
+        """Return the zero-sum payoff.
+
+        Players are ranked by score, then by diamonds. The players tied for
+        the best rank share +1 and all other players share -1. Two players
+        thus get +1/-1, and a tie among everyone is 0.
+        """
+        ranks = list(zip(self._scores, self._diamonds, strict=True))
+        best = max(ranks)
+        winners = ranks.count(best)
+        if not self._game_over or winners == self._num_players:
+            return [0.0] * self._num_players
+        losers = self._num_players - winners
+        return [1.0 / winners if rank == best else -1.0 / losers for rank in ranks]
 
     def observation_string(self, player: int) -> str:
         """Return the state as seen by `player` (own hand, public everything else)."""
         hand = sorted(self._hands[player].elements())
         portals = [
-            [CHARACTERS[card].id for card in self._portals[other]] for other in range(_NUM_PLAYERS)
+            [CHARACTERS[card].id for card in self._portals[other]]
+            for other in range(self._num_players)
         ]
         activated = [
             [CHARACTERS[card].id for card in self._activated_characters[other]]
-            for other in range(_NUM_PLAYERS)
+            for other in range(self._num_players)
         ]
         paid = self._selected_payment_labels()
         decision = self._pending_step
@@ -420,12 +444,13 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
             f"portals={portals} activated={activated} scores={self._scores} "
             f"character_discard={dict(self._character_discard)} "
             f"diamonds={self._diamonds} next_turn_bonus={self._next_turn_bonus} "
+            f"final_turns={self._final_turns} "
             f"to_move=p{self._cur_player} "
             f"left={self._actions_left} payment_target={payment_target} paid={list(paid)} "
             f"red_choice={decision.choice if isinstance(decision, RedAbilityDecision) else None} "
             f"red_target={red_target} "
             f"revealed_hand={revealed_hand} "
-            f"hand_limits={[self._hand_limit(other) for other in range(_NUM_PLAYERS)]} "
+            f"hand_limits={[self._hand_limit(other) for other in range(self._num_players)]} "
             f"peeked_character={None if peeked is None else CHARACTERS[peeked].id} "
             f"blue_choice={decision.choice if isinstance(decision, BlueAbilityDecision) else None}"
         )
@@ -440,7 +465,8 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
             Flat tensor ordered as observing-player one-hot, own-hand counts,
             pearl-display slots, character-display slots, portal slots,
             activated-character counts, character-discard counts, scores,
-            diamonds, queued action bonuses, remaining actions, the top
+            diamonds, queued action bonuses, remaining final turns (0 before
+            the end is triggered), remaining actions, the top
             character card if this player peeked at it, the pending blue
             choice kind, and pending-payment details. Each card slot uses an
             empty/card-type one-hot; count-valued sections use ascending card
@@ -448,7 +474,7 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
         """
         planes: list[float] = []
         # one-hot encoding of the player receiving this observation
-        planes.extend(1.0 if player == index else 0.0 for index in range(_NUM_PLAYERS))
+        planes.extend(1.0 if player == index else 0.0 for index in range(self._num_players))
         # count of each pearl value in the player's hand
         planes.extend(float(self._hands[player][value]) for value in _PEARL_VALUES)
         for slot in range(_PEARL_DISPLAY_SIZE):
@@ -457,16 +483,18 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
             planes.extend(1.0 if value == option else 0.0 for option in (0, *_PEARL_VALUES))
         for slot in range(_CHAR_DISPLAY_SIZE):
             planes.extend(self._character_one_hot(self._character_display, slot))
-        for other in range(_NUM_PLAYERS):
+        for other in range(self._num_players):
             for slot in range(_PORTAL_SLOTS):
                 planes.extend(self._character_one_hot(self._portals[other], slot))
-        for other in range(_NUM_PLAYERS):
+        for other in range(self._num_players):
             activated = Counter(self._activated_characters[other])
             planes.extend(float(activated[card]) for card in range(len(CHARACTERS)))
         planes.extend(float(self._character_discard[card]) for card in range(len(CHARACTERS)))
         planes.extend(score / _TARGET_POINTS for score in self._scores)
         planes.extend(float(diamonds) for diamonds in self._diamonds)
         planes.extend(float(bonus) for bonus in self._next_turn_bonus)
+        # remaining final turns, 0 while the end of the game is not triggered
+        planes.append(0.0 if self._final_turns is None else float(self._final_turns))
         planes.extend(
             1.0 if self._actions_left == step + 1 else 0.0 for step in range(_MAX_REMAINING_ACTIONS)
         )
@@ -492,7 +520,7 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
             if payment.source is PearlSource.VIRTUAL and payment.source_id is not None
         )
         planes.append(float(payment_pending))
-        planes.extend(1.0 if other == target_owner else 0.0 for other in range(_NUM_PLAYERS))
+        planes.extend(1.0 if other == target_owner else 0.0 for other in range(self._num_players))
         planes.extend(1.0 if slot == slot_paid else 0.0 for slot in range(_PORTAL_SLOTS))
         planes.extend(float(Counter(printed_values)[value]) for value in _PEARL_VALUES)
         planes.extend(float(Counter(effective_values)[value]) for value in _PEARL_VALUES)
@@ -511,7 +539,7 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
             1.0
             if isinstance(decision, RedAbilityDecision) and decision.target_player == other
             else 0.0
-            for other in range(_NUM_PLAYERS)
+            for other in range(self._num_players)
         )
         planes.extend(float(revealed[value]) for value in _PEARL_VALUES)
         planes.extend(
@@ -553,19 +581,43 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
             character = CHARACTERS[card]
             if self._activation_plans(player, character):
                 actions.append(Action.ACTIVATE_0 + slot)
-        target_owner = (player + 1) % _NUM_PLAYERS
-        for slot, card in enumerate(self._portals[target_owner]):
-            character = CHARACTERS[card]
-            if isinstance(character.ability, NeighborActivationAbility) and self._activation_plans(
-                player,
-                character,
-            ):
-                actions.append(Action.ACTIVATE_NEIGHBOR_0 + slot)
+        actions.extend(self._neighbor_activation_actions(player))
         for card_id, ability in self._owned_abilities(player, PearlToDiamondAbility):
             if self._hands[player][ability.printed_value]:
                 actions.append(_CONVERSION_ACTIONS[(card_id, ability.printed_value)])
         # A player is never stuck: refreshing an empty display is a legal pass.
         return sorted(actions) if actions else [int(Action.REFRESH_PEARLS)]
+
+    def _neighbor_activation_actions(self, player: int) -> list[int]:
+        """Return the actions activating a payable Irrlicht on a neighboring portal."""
+        first_actions = [Action.ACTIVATE_NEIGHBOR_0]
+        if self._num_players > _MIN_PLAYERS:  # with two players both neighbors coincide
+            first_actions.append(Action.ACTIVATE_PREVIOUS_NEIGHBOR_0)
+        actions: list[int] = []
+        for first_action in first_actions:
+            target_owner, _ = self._neighbor_target(player, first_action)
+            for slot, card in enumerate(self._portals[target_owner]):
+                character = CHARACTERS[card]
+                if isinstance(
+                    character.ability,
+                    NeighborActivationAbility,
+                ) and self._activation_plans(player, character):
+                    actions.append(first_action + slot)
+        return actions
+
+    def _neighbor_target(self, player: int, action: int) -> tuple[int, int]:
+        """Return the ``(portal owner, portal slot)`` addressed by a neighbor activation.
+
+        Args:
+            player: Player activating the neighbor's character.
+            action: An ``ACTIVATE_NEIGHBOR_<slot>`` or ``ACTIVATE_PREVIOUS_NEIGHBOR_<slot>``.
+
+        Returns:
+            The next or previous player in turn order and the slot on their portal.
+        """
+        if action <= Action.ACTIVATE_NEIGHBOR_1:
+            return (player + 1) % self._num_players, action - Action.ACTIVATE_NEIGHBOR_0
+        return (player - 1) % self._num_players, action - Action.ACTIVATE_PREVIOUS_NEIGHBOR_0
 
     def _character_take_actions(self, player: int) -> list[int]:
         """Return the actions putting a display or deck character on `player`'s portal.
@@ -615,7 +667,7 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
             # shuffles once, which only matters for card counting.
             self._pearl_deck += self._pearl_discard
             self._pearl_discard.clear()
-        if self._nodes >= _MAX_NODES:
+        if self._nodes >= self._max_nodes:
             self._game_over = True
 
     def _apply_decision(
@@ -665,11 +717,11 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
         elif action <= Action.ACTIVATE_1:
             slot = action - Action.ACTIVATE_0
             label = f"Activate:{CHARACTERS[self._portals[player][slot]].id}"
-        elif Action.ACTIVATE_NEIGHBOR_0 <= action <= Action.ACTIVATE_NEIGHBOR_1:
-            target_owner = (player + 1) % _NUM_PLAYERS
-            slot = action - Action.ACTIVATE_NEIGHBOR_0
+        elif action in _NEIGHBOR_ACTIONS:
+            target_owner, slot = self._neighbor_target(player, action)
             character = CHARACTERS[self._portals[target_owner][slot]]
-            label = f"ActivateNeighbor:{character.id}"
+            previous = "Previous" if action >= Action.ACTIVATE_PREVIOUS_NEIGHBOR_0 else ""
+            label = f"Activate{previous}Neighbor:{character.id}"
         else:
             label = self._choice_label(action)
         return label
@@ -793,9 +845,8 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
             self._take_character(player, source)
         elif action <= Action.ACTIVATE_1:
             self._activate(player, player, action - Action.ACTIVATE_0)
-        elif Action.ACTIVATE_NEIGHBOR_0 <= action <= Action.ACTIVATE_NEIGHBOR_1:
-            target_owner = (player + 1) % _NUM_PLAYERS
-            self._activate(player, target_owner, action - Action.ACTIVATE_NEIGHBOR_0)
+        elif action in _NEIGHBOR_ACTIONS:
+            self._activate(player, *self._neighbor_target(player, action))
         else:
             message = f"action {action} is not a normal turn action"
             raise ValueError(message)
@@ -1003,7 +1054,7 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
         if isinstance(character.ability, GainActionsAbility):
             self._actions_left += character.ability.actions
         elif isinstance(character.ability, NextPlayerActionAbility):
-            self._next_turn_bonus[(player + 1) % _NUM_PLAYERS] += 1
+            self._next_turn_bonus[(player + 1) % self._num_players] += 1
         elif isinstance(character.ability, KeepPearlAbility):
             values = tuple(sorted(set(plan.discarded_values)))
             if values:
@@ -1015,14 +1066,16 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
         elif isinstance(character.ability, StealPearlAbility):
             targets = tuple(
                 other
-                for other in range(_NUM_PLAYERS)
+                for other in range(self._num_players)
                 if other != player and self._hands[other].total()
             )
             if targets:
                 self._pending_step = RedAbilityDecision(player, RedChoice.STEAL_TARGET, targets)
         elif isinstance(character.ability, DiscardPortalAbility):
             targets = tuple(
-                other for other in range(_NUM_PLAYERS) if other != player and self._portals[other]
+                other
+                for other in range(self._num_players)
+                if other != player and self._portals[other]
             )
             if targets:
                 self._pending_step = RedAbilityDecision(
@@ -1286,8 +1339,19 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
             self._end_turn()
 
     def _end_turn(self) -> None:
-        """Hand the turn to the next player and end the game once the target is reached."""
-        self._cur_player = (self._cur_player + 1) % _NUM_PLAYERS
+        """Hand the turn to the next player and run the final turns once the target is reached.
+
+        The player ending a turn with at least `_TARGET_POINTS` triggers
+        ``2 * players - 1`` final turns: two for everybody else and one for
+        the finisher, so the game stops right before the finisher's next turn.
+        Only the active player can gain points, so the trigger is checked here.
+        """
+        if self._final_turns is None:
+            if self._scores[self._cur_player] >= _TARGET_POINTS:
+                self._final_turns = 2 * self._num_players - 1
+        else:
+            self._final_turns -= 1
+        self._cur_player = (self._cur_player + 1) % self._num_players
         player = self._cur_player
         self._actions_left = (
             _ACTIONS_PER_TURN
@@ -1297,8 +1361,7 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
             )
         )
         self._next_turn_bonus[player] = 0
-        # The round is played to the end so that every player had equal turns.
-        if player == 0 and max(self._scores) >= _TARGET_POINTS:
+        if self._final_turns == 0:
             self._game_over = True
             return
         self._before_turn()
@@ -1402,7 +1465,21 @@ class MoltharGame(pyspiel.Game):  # type: ignore[misc]
     """The simplified *Portale von Molthar* game."""
 
     def __init__(self, params: dict[str, Any] | None = None) -> None:
-        super().__init__(_GAME_TYPE, _GAME_INFO, params or {})
+        params = params or {}
+        num_players = int(params.get("players", _DEFAULT_PLAYERS))
+        if not _MIN_PLAYERS <= num_players <= _MAX_PLAYERS:
+            message = f"players must be in [{_MIN_PLAYERS}, {_MAX_PLAYERS}], got {num_players}"
+            raise ValueError(message)
+        info = pyspiel.GameInfo(
+            num_distinct_actions=len(Action),
+            max_chance_outcomes=max(len(_PEARL_VALUES), len(CHARACTERS)),
+            num_players=num_players,
+            min_utility=-1.0,
+            max_utility=1.0,
+            utility_sum=0.0,
+            max_game_length=_MAX_NODES_PER_PLAYER * num_players,
+        )
+        super().__init__(_GAME_TYPE, info, params)
 
     def new_initial_state(self) -> MoltharState:
         """Return a state with empty displays; chance fills them first."""
@@ -1410,28 +1487,30 @@ class MoltharGame(pyspiel.Game):  # type: ignore[misc]
 
     def observation_tensor_shape(self) -> list[int]:
         """Return the flat observation length (see `MoltharState.observation_tensor`)."""
+        num_players = self.num_players()
         return [
-            _NUM_PLAYERS
+            num_players
             + len(_PEARL_VALUES)
             + _PEARL_DISPLAY_SIZE * (1 + len(_PEARL_VALUES))
-            + (_CHAR_DISPLAY_SIZE + _NUM_PLAYERS * _PORTAL_SLOTS) * (1 + len(CHARACTERS))
-            + _NUM_PLAYERS * len(CHARACTERS)  # activated-character counts
+            + (_CHAR_DISPLAY_SIZE + num_players * _PORTAL_SLOTS) * (1 + len(CHARACTERS))
+            + num_players * len(CHARACTERS)  # activated-character counts
             + len(CHARACTERS)  # discarded-character counts
-            + _NUM_PLAYERS  # scores
-            + _NUM_PLAYERS  # diamonds
-            + _NUM_PLAYERS  # queued action bonuses
+            + num_players  # scores
+            + num_players  # diamonds
+            + num_players  # queued action bonuses
+            + 1  # remaining final turns
             + _MAX_REMAINING_ACTIONS
             + 1
             + len(CHARACTERS)  # top character card, if this player peeked at it
             + len(BlueChoice)  # pending blue choice kind
             + 1  # whether a payment decision is pending
-            + _NUM_PLAYERS  # owner of its target character
+            + num_players  # owner of its target character
             + _PORTAL_SLOTS  # portal slot of a half-paid activation
             + len(_PEARL_VALUES)  # printed values selected towards it
             + len(_PEARL_VALUES)  # corresponding effective values
             + len(CHARACTERS)  # selected virtual-source character counts
             + 1  # diamonds committed by selected pearl modifications
-            + _NUM_PLAYERS  # selected red ability target
+            + num_players  # selected red ability target
             + len(_PEARL_VALUES)  # opposing hand revealed to a Tinkerbell actor
             + len(RedChoice),  # red choice kind
         ]
