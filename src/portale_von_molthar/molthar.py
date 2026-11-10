@@ -308,6 +308,9 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
         self._character_display: list[int] = []
         self._character_discard: Counter[int] = Counter()
         self._hands: list[Counter[int]] = [Counter() for _ in range(self._num_players)]
+        # Lower bound of each hand that all players know: cards taken face up and not
+        # provably spent since. Feeds the observation, so agents need no move history.
+        self._known_pearls: list[Counter[int]] = [Counter() for _ in range(self._num_players)]
         self._portals: list[list[int]] = [[] for _ in range(self._num_players)]
         self._activated_characters: list[list[int]] = [[] for _ in range(self._num_players)]
         self._scores: list[int] = [0] * self._num_players
@@ -541,7 +544,9 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
         Returns:
             Flat tensor ordered as observing-player one-hot, own-hand counts,
             pearl-display slots, character-display slots, portal slots,
-            activated-character counts, character-discard counts, scores,
+            activated-character counts, character-discard counts, hand sizes,
+            publicly known hand cards per player (cards taken face up and not
+            spent since), pearl-discard counts, pearl- and character-deck sizes, scores,
             diamonds, queued action bonuses, remaining final turns (0 before
             the end is triggered), remaining actions, the top
             character card if this player peeked at it, the pending blue
@@ -567,6 +572,13 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
             activated = Counter(self._activated_characters[other])
             planes.extend(float(activated[card]) for card in range(len(CHARACTERS)))
         planes.extend(float(self._character_discard[card]) for card in range(len(CHARACTERS)))
+        # public pearl information that otherwise only the move history would reveal
+        planes.extend(float(hand.total()) for hand in self._hands)
+        for known in self._known_pearls:
+            planes.extend(float(known[value]) for value in _PEARL_VALUES)
+        planes.extend(float(self._pearl_discard[value]) for value in _PEARL_VALUES)
+        planes.append(float(self._pearl_deck.total()))
+        planes.append(float(self._character_deck.total()))
         planes.extend(score / _TARGET_POINTS for score in self._scores)
         planes.extend(float(diamonds) for diamonds in self._diamonds)
         planes.extend(float(bonus) for bonus in self._next_turn_bonus)
@@ -906,7 +918,9 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
         """Apply one of the three per-turn actions of the current player."""
         player = self._cur_player
         if action <= Action.TAKE_PEARL_3:
-            self._hands[player][self._pearl_display.pop(action)] += 1
+            value = self._pearl_display.pop(action)
+            self._hands[player][value] += 1
+            self._known_pearls[player][value] += 1
         elif action == Action.TAKE_PEARL_DECK:
             self._pending_step = DeckTakeStep(player, Pile.PEARL)
         elif action == Action.REFRESH_PEARLS:
@@ -1123,6 +1137,7 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
         for value in plan.discarded_values:
             self._hands[player][value] -= 1
             self._pearl_discard[value] += 1
+            self._forget_known(player, value)
         self._hands[player] = +self._hands[player]  # drop zero counts
         self._portals[target_owner].pop(slot)
         self._activated_characters[player].append(character_index)
@@ -1223,12 +1238,15 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
             self._pearl_discard[value] -= 1
             self._pearl_discard = +self._pearl_discard
             self._hands[decision.actor][value] += 1
+            self._known_pearls[decision.actor][value] += 1
         elif decision.choice is RedChoice.STEAL_PEARL:
             if other is None:
                 raise RuntimeError("steal decision has no target player")
             self._hands[other][value] -= 1
             self._hands[other] = +self._hands[other]
             self._hands[decision.actor][value] += 1
+            self._forget_known(other, value)
+            self._known_pearls[decision.actor][value] += 1  # the stolen value is announced
         elif decision.choice is RedChoice.DISCARD_PORTAL:
             if other is None:
                 raise RuntimeError("discard decision has no target player")
@@ -1287,6 +1305,7 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
             self._pending_step = HandDrawStep(player, self._hands[player].total())
             self._pearl_discard += self._hands[player]
             self._hands[player] = Counter()
+            self._known_pearls[player] = Counter()
             return
         self._finish_turn()
 
@@ -1483,6 +1502,16 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
             and self._hands[player].total() > self._hand_limit(player)
         )
 
+    def _forget_known(self, player: int, value: int) -> None:
+        """Drop one known card of `value` after `player` publicly gave up such a card.
+
+        Observers cannot tell whether the known card or a hidden card of the same value
+        left the hand, so the public lower bound shrinks by one either way.
+        """
+        if self._known_pearls[player][value]:
+            self._known_pearls[player][value] -= 1
+            self._known_pearls[player] = +self._known_pearls[player]
+
     def _discard(self, player: int, value: int) -> None:
         """Move one pearl card of `value` from the hand of `player` to the discard pile."""
         hand = self._hands[player]
@@ -1491,6 +1520,7 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
             raise ValueError(message)
         hand[value] -= 1
         self._pearl_discard[value] += 1
+        self._forget_known(player, value)
         self._hands[player] = +hand  # drop zero counts
 
     def _trim_hand(self, player: int) -> None:
@@ -1502,6 +1532,7 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
             value = min(spare) if spare else min(hand.elements())
             hand[value] -= 1
             self._pearl_discard[value] += 1
+            self._forget_known(player, value)
         self._hands[player] = +hand
 
     def _wanted_values(self, player: int) -> set[int]:
@@ -1572,6 +1603,10 @@ class MoltharGame(pyspiel.Game):  # type: ignore[misc]
             + (_CHAR_DISPLAY_SIZE + num_players * _PORTAL_SLOTS) * (1 + len(CHARACTERS))
             + num_players * len(CHARACTERS)  # activated-character counts
             + len(CHARACTERS)  # discarded-character counts
+            + num_players  # hand sizes
+            + num_players * len(_PEARL_VALUES)  # publicly known hand cards
+            + len(_PEARL_VALUES)  # pearl-discard counts
+            + 2  # pearl- and character-deck sizes
             + num_players  # scores
             + num_players  # diamonds
             + num_players  # queued action bonuses

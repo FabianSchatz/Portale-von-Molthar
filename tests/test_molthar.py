@@ -55,6 +55,9 @@ def _assert_pearls_conserved(state: pyspiel.State) -> None:
         + held
     )
     assert total == _TOTAL_PEARLS
+    # publicly known cards are a lower bound of each hand
+    for known, hand in zip(state._known_pearls, state._hands, strict=True):  # noqa: SLF001
+        assert known <= hand
 
 
 @pytest.mark.parametrize("players", [2, 3, 5])
@@ -1192,3 +1195,16 @@ def test_molthar_state_pending_step() -> None:
     state.apply_action(Action.ACTIVATE_0)
     assert isinstance(state.pending_step, PaymentDecision)
     assert state.pending_step.target_slot == 0
+
+
+def test_molthar_state_observation_tensor_tracks_known_pearls() -> None:
+    """Pearls taken face up stay visible to everyone until such a value is discarded."""
+    state = pyspiel.load_game("python_portale_von_molthar").new_initial_state()
+    _resolve_chance(state)
+    hidden = state._hands[0].total()  # noqa: SLF001
+    value = state._pearl_display[0]  # noqa: SLF001
+    state.apply_action(Action.TAKE_PEARL_0)
+    assert state._known_pearls[0] == Counter({value: 1})  # noqa: SLF001
+    assert state._hands[0].total() == hidden + 1  # noqa: SLF001
+    state._discard(0, value)  # noqa: SLF001
+    assert not state._known_pearls[0]  # noqa: SLF001
