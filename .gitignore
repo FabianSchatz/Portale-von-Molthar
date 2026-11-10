@@ -192,3 +192,6 @@ docs/build
 
 # emacs
 *~
+
+# trained RL models
+checkpoints/

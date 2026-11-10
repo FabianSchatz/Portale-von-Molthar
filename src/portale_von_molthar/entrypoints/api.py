@@ -7,10 +7,12 @@ Run the development server with::
 REST creates and joins rooms and returns a seat token. Everything after that runs over
 ``/ws/{game_id}?token=...``: the server sends ``{"type": "view", "view": GameView}``
 after every change and ``{"type": "error", "message": str}`` for a rejected command;
-clients send the commands defined below. When ``frontend/dist`` exists, it is served
-at ``/`` so one process hosts the whole game.
+clients send the commands defined below. After every command, bots to move play one
+action at a time, with a short pause in between so people can follow their moves. When
+``frontend/dist`` exists, it is served at ``/`` so one process hosts the whole game.
 """
 
+import asyncio
 from pathlib import Path
 from typing import Annotated, Final, Literal, TypeAlias
 
@@ -18,6 +20,7 @@ from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, stat
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, TypeAdapter, ValidationError
 
+from portale_von_molthar.agents.bots import Difficulty
 from portale_von_molthar.services.catalog import CharacterInfo, character_catalog
 from portale_von_molthar.services.game_service import (
     MAX_NAME_LENGTH,
@@ -27,6 +30,7 @@ from portale_von_molthar.services.game_service import (
 )
 
 _FRONTEND_DIST: Final = Path(__file__).resolve().parents[3] / "frontend" / "dist"
+BOT_DELAY: Final = 0.7  # seconds between two bot actions
 
 
 class NameBody(BaseModel):
@@ -39,6 +43,13 @@ class StartCommand(BaseModel):
     """Host starts the game with everyone seated."""
 
     type: Literal["start"]
+
+
+class AddBotCommand(BaseModel):
+    """Host seats a bot of the given difficulty in the lobby."""
+
+    type: Literal["add_bot"]
+    difficulty: Difficulty
 
 
 class PlayCommand(BaseModel):
@@ -64,17 +75,23 @@ class DiscardCommand(BaseModel):
 
 
 Command: TypeAlias = Annotated[
-    StartCommand | PlayCommand | ActivateCommand | DiscardCommand,
+    StartCommand | AddBotCommand | PlayCommand | ActivateCommand | DiscardCommand,
     Field(discriminator="type"),
 ]
 _COMMANDS: Final = TypeAdapter(Command)
 
 
 class _Connections:
-    """Open WebSockets per room and seat, to broadcast views after each change."""
+    """Open WebSockets per room and seat, to broadcast views after each change.
 
-    def __init__(self, service: GameService) -> None:
+    Args:
+        service: Game rooms whose views are sent.
+        bot_delay: Pause in seconds before each bot action.
+    """
+
+    def __init__(self, service: GameService, bot_delay: float) -> None:
         self._service = service
+        self._bot_delay = bot_delay
         self._sockets: dict[str, dict[WebSocket, int]] = {}
 
     def add(self, game_id: str, seat: int, socket: WebSocket) -> None:
@@ -96,20 +113,36 @@ class _Connections:
             except (WebSocketDisconnect, RuntimeError):
                 self.remove(game_id, socket)
 
+    async def run_bots(self, game_id: str) -> None:
+        """Let bots move one action at a time until a human is to move or the game ends.
 
-def create_app(service: GameService | None = None, frontend_dist: Path | None = None) -> FastAPI:
+        Two loops for the same room (two people sending commands) cannot corrupt it:
+        each `GameService.step_bot` call is synchronous and re-checks whose turn it is.
+        """
+        while self._service.bot_to_move(game_id):
+            await asyncio.sleep(self._bot_delay)
+            if self._service.step_bot(game_id):
+                await self.broadcast(game_id)
+
+
+def create_app(
+    service: GameService | None = None,
+    frontend_dist: Path | None = None,
+    bot_delay: float = BOT_DELAY,
+) -> FastAPI:
     """Return the API around `service`.
 
     Args:
         service: Game rooms to expose; a fresh in-memory service by default.
         frontend_dist: Built frontend to serve at ``/``; defaults to ``frontend/dist``
             in the repository and is skipped when the folder does not exist.
+        bot_delay: Pause in seconds before each bot action.
 
     Returns:
         The FastAPI application.
     """
     games = service or GameService()
-    connections = _Connections(games)
+    connections = _Connections(games, bot_delay)
     app = FastAPI(title="Portale von Molthar")
 
     # The views are TypedDicts already; pydantic needs typing_extensions ones for models.
@@ -173,6 +206,7 @@ async def _serve(
                 await socket.send_json({"type": "error", "message": text})
                 continue
             await connections.broadcast(game_id)
+            await connections.run_bots(game_id)
     except WebSocketDisconnect:
         connections.remove(game_id, socket)
         await connections.broadcast(game_id)
@@ -182,6 +216,8 @@ def _apply(games: GameService, game_id: str, seat: int, command: Command) -> Non
     """Dispatch one validated command to the service."""
     if isinstance(command, StartCommand):
         games.start_game(game_id, seat)
+    elif isinstance(command, AddBotCommand):
+        games.add_bot(game_id, seat, command.difficulty)
     elif isinstance(command, PlayCommand):
         games.play(game_id, seat, command.action)
     elif isinstance(command, ActivateCommand):

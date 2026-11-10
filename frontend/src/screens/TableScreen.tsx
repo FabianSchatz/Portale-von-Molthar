@@ -7,7 +7,7 @@ import MenuItem from '@mui/material/MenuItem';
 import { useEffect, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
 import type { ActivationView, Catalog, Command, GameView, MoveKind, MoveView, PlayerView } from '../api/types';
-import { ActionBar, Button, GameLog, Hand, Market, PearlCard, PlayerArea } from '../design';
+import { ActionBar, Button, GameLog, Hand, Market, PlayerArea } from '../design';
 import type { ActionId, CharacterCardProps } from '../design';
 import { characterName, characterProps } from '../game/characters';
 import { indicesForValues, matchingPlans } from '../game/payment';
@@ -217,16 +217,10 @@ export function TableScreen({ view, catalog, send, onLeave }: TableScreenProps):
               away={!player.connected}
               points={player.points}
               diamonds={player.diamonds}
-              handCount={player.hand.length}
+              handCount={player.hand_size}
               portal={portalCards(player)}
               activated={player.activated.map((id) => characterProps(catalog, id))}
-            >
-              <div className="table-hand-row" aria-label={`${player.name}'s hand`}>
-                {player.hand.map((value, index) => (
-                  <PearlCard key={index} value={value} size="sm" />
-                ))}
-              </div>
-            </PlayerArea>
+            />
           ))}
         </div>
         <Market
@@ -248,7 +242,7 @@ export function TableScreen({ view, catalog, send, onLeave }: TableScreenProps):
           active={myTurn}
           points={me.points}
           diamonds={me.diamonds}
-          handCount={me.hand.length}
+          handCount={me.hand_size}
           portal={portalCards(me)}
           activated={me.activated.map((id) => characterProps(catalog, id))}
         >

@@ -21,14 +21,18 @@ export interface JoinResult {
   token: string;
 }
 
+export type Difficulty = 'easy' | 'medium' | 'hard';
+
 export interface PlayerView {
   seat: number;
   name: string;
   connected: boolean;
+  /** Difficulty of a bot seat; `null` for a human player. */
+  bot: Difficulty | null;
   points: number;
   diamonds: number;
-  /** Sorted pearl values: every hand is public. */
-  hand: number[];
+  /** Number of pearls in hand; only your own values are sent (in the table). */
+  hand_size: number;
   hand_limit: number;
   portal: string[];
   activated: string[];
@@ -118,6 +122,7 @@ export interface GameView {
 
 export type Command =
   | { type: 'start' }
+  | { type: 'add_bot'; difficulty: Difficulty }
   | { type: 'play'; action: number }
   | { type: 'activate'; action: number; plan: number }
   | { type: 'discard'; values: number[] };

@@ -1,8 +1,9 @@
 """Per-seat JSON views of a running game: what each player may see and do.
 
-Every view is built for one seat. All hands are public, as at a table where every
-player lays their pearls open; legal actions, activation payment plans, and decision
-prompts are only included for the seat that has to move. All keys are snake_case and mirror
+Every view is built for one seat. Hands are private: a seat sees only its own
+pearls (in `TableView`) and the hand sizes of the others; legal actions, activation
+payment plans, and decision prompts are only included for the seat that has to move.
+All keys are snake_case and mirror
 ``frontend/src/api/types.ts``.
 """
 
@@ -10,6 +11,7 @@ from typing import Final, Literal, TypeAlias, TypedDict
 
 import pyspiel
 
+from portale_von_molthar.agents.bots import Difficulty
 from portale_von_molthar.cards import CHARACTERS, Character
 from portale_von_molthar.decisions import BlueAbilityDecision, RedAbilityDecision
 from portale_von_molthar.molthar import Action, MoltharState
@@ -59,14 +61,19 @@ _PAST_TENSE: Final = {
 
 
 class PlayerView(TypedDict):
-    """Public information about one seat, including its sorted hand."""
+    """Public information about one seat; its hand only as a count.
+
+    Attributes:
+        bot: Difficulty of a bot seat, ``None`` for a human player.
+    """
 
     seat: int
     name: str
     connected: bool
+    bot: Difficulty | None
     points: int
     diamonds: int
-    hand: list[int]
+    hand_size: int
     hand_limit: int
     portal: list[str]
     activated: list[str]
@@ -172,6 +179,7 @@ def player_views(
     state: MoltharState | None,
     names: list[str],
     connected: list[bool],
+    bots: list[Difficulty | None],
 ) -> list[PlayerView]:
     """Return the public information of every seat.
 
@@ -179,6 +187,7 @@ def player_views(
         state: Running game, or ``None`` in the lobby (all counters are zero).
         names: Player name per seat.
         connected: Whether each seat currently has an open connection.
+        bots: Difficulty of each bot seat, ``None`` for human seats.
 
     Returns:
         One view per seat, in seat order.
@@ -189,9 +198,10 @@ def player_views(
                 seat=seat,
                 name=name,
                 connected=connected[seat],
+                bot=bots[seat],
                 points=0,
                 diamonds=0,
-                hand=[],
+                hand_size=0,
                 hand_limit=5,
                 portal=[],
                 activated=[],
@@ -205,9 +215,10 @@ def player_views(
             seat=seat,
             name=name,
             connected=connected[seat],
+            bot=bots[seat],
             points=state.scores[seat],
             diamonds=state.diamonds[seat],
-            hand=hands[seat],
+            hand_size=len(hands[seat]),
             hand_limit=limits[seat],
             portal=portals[seat],
             activated=activated[seat],

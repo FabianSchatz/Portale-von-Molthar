@@ -5,6 +5,7 @@ from collections import Counter
 
 import pytest
 
+from portale_von_molthar.agents.bots import RandomBot
 from portale_von_molthar.cards import CHARACTERS
 from portale_von_molthar.molthar import Action, MoltharState
 from portale_von_molthar.services.game_service import GameError, GameService
@@ -183,3 +184,80 @@ def test_view_after_random_play(players: int) -> None:
         else:
             service.play(game_id, mover, rng.choice(table["moves"])["action"])
     assert all(len(_state(service, game_id).hands[seat]) <= 8 for seat in range(players))
+
+
+def _with_bots(bots: int, seed: int = 0) -> tuple[GameService, str]:
+    """Return a started game of a human host and `bots` random bots."""
+    service = GameService(seed, bot_factory=lambda _players, _level, seed: RandomBot(seed))
+    game_id = service.create_game("Ada")["game_id"]
+    for _ in range(bots):
+        service.add_bot(game_id, 0, "hard")
+    service.start_game(game_id, 0)
+    return service, game_id
+
+
+def test_add_bot() -> None:
+    service = GameService(0)
+    game_id = service.create_game("Ada")["game_id"]
+    service.add_bot(game_id, 0, "easy")
+    service.add_bot(game_id, 0, "hard")
+    players = service.view(game_id, 0)["players"]
+    assert [player["name"] for player in players] == ["Ada", "Easy bot 1", "Hard bot 2"]
+    assert [player["bot"] for player in players] == [None, "easy", "hard"]
+    assert all(player["connected"] for player in players[1:])
+    with pytest.raises(GameError, match="unknown player"):
+        service.seat_for(game_id, "")
+
+
+def test_add_bot_rejects_guests_full_and_running_games() -> None:
+    service = GameService(0)
+    game_id = service.create_game("Ada")["game_id"]
+    guest = service.join_game(game_id, "Ben")["seat"]
+    with pytest.raises(GameError, match="only the host"):
+        service.add_bot(game_id, guest, "easy")
+    for _ in range(3):
+        service.add_bot(game_id, 0, "easy")
+    with pytest.raises(GameError, match="already has 5"):
+        service.add_bot(game_id, 0, "easy")
+    service.start_game(game_id, 0)
+    with pytest.raises(GameError, match="started"):
+        service.add_bot(game_id, 0, "easy")
+
+
+def test_bot_to_move() -> None:
+    service, game_id = _with_bots(1)
+    assert not service.bot_to_move(game_id)  # the host starts
+    for _ in range(3):
+        service.play(game_id, 0, Action.TAKE_PEARL_DECK)
+    while _state(service, game_id).current_player() == 0:  # hand-limit discards
+        service.play(game_id, 0, _state(service, game_id).legal_actions(0)[0])
+    assert service.bot_to_move(game_id)
+
+
+@pytest.mark.parametrize("bots", [1, 2, 4])
+def test_step_bot(bots: int) -> None:
+    """Bots answer every decision of long games, and their moves reach the Chronicle."""
+    rng = random.Random(bots)  # noqa: S311  (test randomness, not crypto)
+    service, game_id = _with_bots(bots, seed=bots)
+    assert not service.step_bot(game_id)  # the host is to move
+    bot_lines = 0
+    for _ in range(1500):
+        state = _state(service, game_id)
+        if state.is_terminal():
+            break
+        if service.bot_to_move(game_id):
+            log_length = len(service.view(game_id, 0)["log"])
+            assert service.step_bot(game_id)
+            bot_lines += len(service.view(game_id, 0)["log"]) > log_length
+            continue
+        table = service.view(game_id, 0)["table"]
+        assert table is not None
+        if table["prompt"] is not None and table["prompt"]["kind"] == "discard":
+            service.discard(game_id, 0, rng.sample(table["hand"], table["prompt"]["count"]))
+        elif table["activations"]:
+            service.activate(game_id, 0, rng.choice(table["activations"])["action"], 0)
+        else:
+            service.play(game_id, 0, rng.choice(table["moves"])["action"])
+    assert bot_lines > 100
+    names = {line["player"] for line in service.view(game_id, 0)["log"]}
+    assert f"Hard bot {bots}" in names

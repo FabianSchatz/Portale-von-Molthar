@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import type { ReactElement } from 'react';
-import type { Command, GameView } from '../api/types';
+import type { Command, Difficulty, GameView } from '../api/types';
 import { Button } from '../design';
 
 const MIN_PLAYERS = 2;
 const MAX_PLAYERS = 5;
+const DIFFICULTIES: Difficulty[] = ['easy', 'medium', 'hard'];
 
 interface LobbyProps {
   view: GameView;
@@ -17,6 +18,7 @@ export function LobbyScreen({ view, send, onLeave }: LobbyProps): ReactElement {
   const [copied, setCopied] = useState(false);
   const isHost = view.you === 0;
   const enough = view.players.length >= MIN_PLAYERS;
+  const full = view.players.length >= MAX_PLAYERS;
   const link = `${window.location.origin}/?game=${view.game_id}`;
 
   const copy = async (): Promise<void> => {
@@ -54,14 +56,25 @@ export function LobbyScreen({ view, send, onLeave }: LobbyProps): ReactElement {
               {player.name}
               {player.seat === view.you ? <span className="mi-you">(you)</span> : null}
               {player.seat === 0 ? <span className="mi-label">host</span> : null}
+              {player.bot ? <span className="mi-label">bot</span> : null}
             </li>
           ))}
         </ol>
+        {isHost ? (
+          <div className="app-row">
+            <span className="mi-label">Add a bot</span>
+            {DIFFICULTIES.map((difficulty) => (
+              <Button key={difficulty} disabled={full} onClick={() => send({ type: 'add_bot', difficulty })}>
+                {difficulty[0].toUpperCase() + difficulty.slice(1)}
+              </Button>
+            ))}
+          </div>
+        ) : null}
         <p className="app-text">
           {isHost
             ? enough
               ? 'Everyone in? Start when the table is complete.'
-              : 'Share the code; at least one more player has to join.'
+              : 'Share the code or add a bot; at least one more player is needed.'
             : `Waiting for ${view.players[0]?.name ?? 'the host'} to start the game.`}
         </p>
         <div className="app-row">

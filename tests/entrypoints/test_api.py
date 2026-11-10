@@ -6,6 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
+from portale_von_molthar.agents.bots import RandomBot
 from portale_von_molthar.entrypoints.api import create_app
 from portale_von_molthar.molthar import Action
 from portale_von_molthar.services.game_service import GameService
@@ -65,6 +66,29 @@ def test_create_app_websocket_game(client: TestClient) -> None:
         ben.receive_json()
         assert len(view["table"]["hand"]) == 1
         assert view["log"][-1]["text"] == "took a hidden pearl"
+
+
+def test_create_app_websocket_bot_game(tmp_path: Path) -> None:
+    service = GameService(0, bot_factory=lambda _players, _level, seed: RandomBot(seed))
+    client = TestClient(create_app(service, frontend_dist=tmp_path / "missing", bot_delay=0))
+    host = client.post("/api/games", json={"name": "Ada"}).json()
+    with client.websocket_connect(f"/ws/{host['game_id']}?token={host['token']}") as ada:
+        ada.receive_json()
+        ada.send_json({"type": "add_bot", "difficulty": "medium"})
+        bot = ada.receive_json()["view"]["players"][1]
+        assert (bot["name"], bot["bot"], bot["connected"]) == ("Medium bot 1", "medium", True)
+        ada.send_json({"type": "add_bot", "difficulty": "impossible"})
+        assert ada.receive_json() == {"type": "error", "message": "malformed command"}
+
+        ada.send_json({"type": "start"})
+        ada.receive_json()
+        for _ in range(3):
+            ada.send_json({"type": "play", "action": Action.TAKE_PEARL_DECK})
+            view = ada.receive_json()["view"]
+        # The bot plays its whole turn, one view per action, then it is Ada's turn again.
+        while view["table"]["current_player"] != 0:
+            view = ada.receive_json()["view"]
+        assert any(line["player"] == "Medium bot 1" for line in view["log"])
 
 
 def test_create_app_websocket_rejects_bad_tokens(client: TestClient) -> None:

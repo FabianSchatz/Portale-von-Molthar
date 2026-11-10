@@ -32,10 +32,22 @@ uvicorn portale_von_molthar.entrypoints.api:app --reload   # API on :8000
 cd frontend && npm install && npm run dev                  # UI on :5173, proxies /api and /ws
 ```
 
-For one process that serves everything, run `npm run build` in `frontend/` and start
-uvicorn without `--reload`: the API then serves `frontend/dist` at `/`. Share the URL
-(for example through `cloudflared tunnel` or `ngrok http 8000`) and the game code.
-Games live in memory, so restarting the server ends them.
+For one process that serves everything, build the frontend once; the API then serves
+`frontend/dist` at `/`. Games live in memory, so restarting the server ends them.
+
+```bash
+cd frontend && npm run build && cd ..
+uvicorn portale_von_molthar.entrypoints.api:app --host 0.0.0.0 --port 8000
+```
+
+**Same Wi-Fi:** find the host's IP (`ipconfig getifaddr en0` on macOS), and everyone opens
+`http://<that-ip>:8000`. Allow incoming connections if the firewall asks. Guest networks
+often block device-to-device traffic.
+
+**Over the internet:** with uvicorn running, start `cloudflared tunnel --url http://localhost:8000`
+(`brew install cloudflared`) and share the printed `https://….trycloudflare.com` URL.
+
+One player creates a game, the others join with its 5-letter code or the invite link.
 
 
 ## Tooling

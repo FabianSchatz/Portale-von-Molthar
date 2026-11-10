@@ -32,16 +32,18 @@ def _state(players: int = 2) -> MoltharState:
     return state
 
 
-def test_player_views_show_hands() -> None:
+def test_player_views_hide_hands() -> None:
     state = _state()
     state._hands[1] = Counter({5: 2, 3: 1})  # noqa: SLF001
-    views = player_views(state, _NAMES[:2], [True, False])
-    assert views[1]["hand"] == [3, 5, 5]
+    views = player_views(state, _NAMES[:2], [True, False], [None, "hard"])
+    assert views[1]["hand_size"] == 3
+    assert "hand" not in views[1]
     assert views[1]["connected"] is False
+    assert views[1]["bot"] == "hard"
 
 
 def test_player_views_lobby() -> None:
-    views = player_views(None, _NAMES, [True, True, True])
+    views = player_views(None, _NAMES, [True, True, True], [None, None, None])
     assert [view["name"] for view in views] == _NAMES
     assert all(view["points"] == 0 for view in views)
 

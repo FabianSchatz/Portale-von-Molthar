@@ -53,6 +53,9 @@ docs = [
 
 # All requirements needed for local development.
 dev = ["portale_von_molthar[cqa, test, docs, server]"]
+train = [
+    "torch>=2.4",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/portale_von_molthar"]

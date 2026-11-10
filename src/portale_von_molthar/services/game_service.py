@@ -9,12 +9,14 @@ for an asyncio server.
 import random
 import secrets
 from collections import Counter
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Final, Literal, TypeAlias, TypedDict
 
 import pyspiel
 
 from portale_von_molthar import molthar  # noqa: F401  (registers the game)
+from portale_von_molthar.agents.bots import Bot, Difficulty, make_bot
 from portale_von_molthar.decisions import PaymentDecision
 from portale_von_molthar.molthar import Action, MoltharState
 from portale_von_molthar.services.catalog import character_name
@@ -33,6 +35,8 @@ from portale_von_molthar.services.views import (
 )
 
 GameStatus: TypeAlias = Literal["lobby", "playing", "finished"]
+# Builds the bot of one seat from the player count, its difficulty, and a seed.
+BotFactory: TypeAlias = Callable[[int, Difficulty, int], Bot]
 
 MIN_PLAYERS: Final = 2
 MAX_PLAYERS: Final = 5
@@ -91,11 +95,12 @@ class GameView(TypedDict):
 
 @dataclass
 class _Seat:
-    """A joined player."""
+    """A joined player; bots have a difficulty and no token, so nobody can claim them."""
 
     name: str
-    token: str
+    token: str | None
     connections: int = 0
+    bot: Difficulty | None = None
 
 
 @dataclass
@@ -110,6 +115,7 @@ class _Room:
     round: int = 1
     turn_player: int = 0
     turn_actions: int = 0
+    bots: dict[int, Bot] = field(default_factory=dict)
 
 
 class GameService:
@@ -118,11 +124,14 @@ class GameService:
     Args:
         seed: Seed for game ids, tokens are always cryptographically random. Shuffles
             use one `random.Random` per room seeded from this; ``None`` seeds randomly.
+        bot_factory: Builds the bots of bot seats when a game starts; by default the
+            trained policy for the table size, or a random bot without one.
     """
 
-    def __init__(self, seed: int | None = None) -> None:
+    def __init__(self, seed: int | None = None, bot_factory: BotFactory = make_bot) -> None:
         self._rng = random.Random(seed)  # noqa: S311  (shuffling, not crypto)  # nosec B311
         self._rooms: dict[str, _Room] = {}
+        self._bot_factory = bot_factory
 
     # region public methods
 
@@ -146,22 +155,39 @@ class GameService:
         if not 0 <= plan < len(plans):
             message = "that payment does not fit the requirement"
             raise GameError(message)
-        character = activation_character(state, seat, action)
         chosen = plans[plan]
-        self._log(
-            room,
-            seat,
-            action,
-            f"activated {character_name(character.id)}",
-            highlight=f"+{character.points}" if character.points else None,
-            tone="power" if character.points else None,
-        )
+        self._log_activation(room, state, seat, action)
         state.apply_action(action)
         # The engine narrows the plans one pearl at a time in the plans' canonical order.
         while isinstance(step := state.pending_step, PaymentDecision):
             option = chosen.pearls[len(step.selected)]
             state.apply_action(MoltharState._payment_action(option))  # noqa: SLF001
         self._advance(room)
+
+    def add_bot(self, game_id: str, seat: int, difficulty: Difficulty) -> None:
+        """Seat a bot in a room that has not started yet; only the host may add bots.
+
+        Args:
+            game_id: Room to add the bot to.
+            seat: Seat asking to add the bot.
+            difficulty: How strong the bot plays.
+
+        Raises:
+            GameError: If `seat` is not the host, the game runs, or the room is full.
+        """
+        room = self._room(game_id)
+        if seat != 0:
+            message = "only the host can add bots"
+            raise GameError(message)
+        self._check_open(room)
+        number = sum(player.bot is not None for player in room.seats) + 1
+        room.seats.append(_Seat(f"{difficulty.capitalize()} bot {number}", None, bot=difficulty))
+
+    def bot_to_move(self, game_id: str) -> bool:
+        """Return whether a running game waits for one of its bots."""
+        room = self._room(game_id)
+        state = room.state
+        return state is not None and not state.is_terminal() and state.current_player() in room.bots
 
     def create_game(self, name: str) -> JoinResult:
         """Open a new room and seat its creator as host (seat 0).
@@ -223,18 +249,10 @@ class GameService:
         if not 1 <= len(name) <= MAX_NAME_LENGTH:
             message = f"names have 1 to {MAX_NAME_LENGTH} characters"
             raise GameError(message)
-        if room.state is not None:
-            message = "this game has already started"
-            raise GameError(message)
-        if len(room.seats) >= MAX_PLAYERS:
-            message = f"this game already has {MAX_PLAYERS} players"
-            raise GameError(message)
-        room.seats.append(_Seat(name, secrets.token_urlsafe(16)))
-        return JoinResult(
-            game_id=room.game_id,
-            seat=len(room.seats) - 1,
-            token=room.seats[-1].token,
-        )
+        self._check_open(room)
+        token = secrets.token_urlsafe(16)
+        room.seats.append(_Seat(name, token))
+        return JoinResult(game_id=room.game_id, seat=len(room.seats) - 1, token=token)
 
     def play(self, game_id: str, seat: int, action: int) -> None:
         """Apply one offered move: a take, a display refresh, or a decision.
@@ -273,7 +291,7 @@ class GameService:
         """
         room = self._room(game_id)
         for seat, player in enumerate(room.seats):
-            if secrets.compare_digest(player.token, token):
+            if player.token is not None and secrets.compare_digest(player.token, token):
                 return seat
         message = "unknown player for this game"
         raise GameError(message)
@@ -309,9 +327,46 @@ class GameService:
         if len(room.seats) < MIN_PLAYERS:
             message = f"at least {MIN_PLAYERS} players are needed"
             raise GameError(message)
-        game = pyspiel.load_game(f"python_portale_von_molthar(players={len(room.seats)})")
+        players = len(room.seats)
+        game = pyspiel.load_game(f"python_portale_von_molthar(players={players})")
         room.state = game.new_initial_state()
+        room.bots = {
+            index: self._bot_factory(players, player.bot, room.rng.getrandbits(32))
+            for index, player in enumerate(room.seats)
+            if player.bot is not None
+        }
         self._resolve_chance(room)
+
+    def step_bot(self, game_id: str) -> bool:
+        """Let the bot to move take one action, logged like a human's.
+
+        An activation includes its payment, so one step never stops halfway through
+        paying. Hand-limit discards are single steps, one pearl each.
+
+        Args:
+            game_id: Room whose bot should move.
+
+        Returns:
+            Whether a bot moved; ``False`` when no bot is to move.
+        """
+        room = self._room(game_id)
+        state = room.state
+        if state is None or not self.bot_to_move(game_id):
+            return False
+        seat = state.current_player()
+        bot = room.bots[seat]
+        action = bot.choose(state, seat)
+        if action in ACTIVATION_ACTIONS:
+            self._log_activation(room, state, seat, action)
+            state.apply_action(action)
+            while isinstance(state.pending_step, PaymentDecision):
+                state.apply_action(bot.choose(state, seat))
+        else:
+            _, text = describe_action(state, seat, action, self._names(room))
+            self._log(room, seat, action, text)
+            state.apply_action(action)
+        self._advance(room)
+        return True
 
     def view(self, game_id: str, seat: int) -> GameView:
         """Return everything `seat` may see of its room.
@@ -326,7 +381,8 @@ class GameService:
         room = self._room(game_id)
         state = room.state
         names = self._names(room)
-        connected = [player.connections > 0 for player in room.seats]
+        connected = [player.connections > 0 or player.bot is not None for player in room.seats]
+        bots = [player.bot for player in room.seats]
         result: ResultView | None = None
         if state is not None and state.is_terminal():
             returns = state.returns()
@@ -338,7 +394,7 @@ class GameService:
             game_id=room.game_id,
             status=status,
             you=seat,
-            players=player_views(state, names, connected),
+            players=player_views(state, names, connected, bots),
             table=None if state is None else table_view(state, seat, names),
             log=room.log,
             round=room.round,
@@ -349,6 +405,16 @@ class GameService:
     # endregion
 
     # region private methods
+
+    @staticmethod
+    def _check_open(room: _Room) -> None:
+        """Raise unless `room` is still in its lobby and has a free seat."""
+        if room.state is not None:
+            message = "this game has already started"
+            raise GameError(message)
+        if len(room.seats) >= MAX_PLAYERS:
+            message = f"this game already has {MAX_PLAYERS} players"
+            raise GameError(message)
 
     def _room(self, game_id: str) -> _Room:
         """Return a room by id (case-insensitive)."""
@@ -398,6 +464,18 @@ class GameService:
                 tone=tone,
                 action=number,
             ),
+        )
+
+    def _log_activation(self, room: _Room, state: MoltharState, seat: int, action: int) -> None:
+        """Log an activation with the points it scores; call before applying it."""
+        character = activation_character(state, seat, action)
+        self._log(
+            room,
+            seat,
+            action,
+            f"activated {character_name(character.id)}",
+            highlight=f"+{character.points}" if character.points else None,
+            tone="power" if character.points else None,
         )
 
     def _advance(self, room: _Room) -> None:
