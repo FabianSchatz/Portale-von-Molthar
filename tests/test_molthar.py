@@ -7,7 +7,7 @@ import pyspiel
 import pytest
 
 from portale_von_molthar.cards import CHARACTERS
-from portale_von_molthar.decisions import RedChoice
+from portale_von_molthar.decisions import PaymentDecision, RedChoice
 from portale_von_molthar.molthar import (
     _HAND_LIMIT,
     _PEARL_COPIES,
@@ -1135,3 +1135,60 @@ def test_molthar_state_dumbledore_peek_fixes_the_blind_take() -> None:
     state.apply_action(goblin)
     assert state._portals[0] == [goblin]  # noqa: SLF001
     assert state._peeked_character is None  # noqa: SLF001
+
+
+def test_molthar_state_public_properties() -> None:
+    """The read-only properties expose copies of the state with character ids."""
+    state = pyspiel.load_game("python_portale_von_molthar(players=3)").new_initial_state()
+    goblin = _character_index("goblin")
+    lion = _character_index("lion")
+    monkey = _character_index("flying_monkey")
+    state._hands[1] = Counter({5: 2, 2: 1})  # noqa: SLF001
+    state._portals[0] = [goblin]  # noqa: SLF001
+    state._activated_characters[2] = [monkey]  # noqa: SLF001
+    state._pearl_display = [1, 2, 3, 4]  # noqa: SLF001
+    state._character_display = [lion, goblin]  # noqa: SLF001
+    state._diamonds = [0, 2, 1]  # noqa: SLF001
+    state._pearl_discard = Counter({7: 3})  # noqa: SLF001
+    state._character_discard = Counter({lion: 2})  # noqa: SLF001
+
+    assert state.hands == [[], [2, 5, 5], []]
+    assert state.portals == [["goblin"], [], []]
+    assert state.activated_characters == [[], [], ["flying_monkey"]]
+    assert state.pearl_display == [1, 2, 3, 4]
+    assert state.character_display == ["lion", "goblin"]
+    assert state.diamonds == [0, 2, 1]
+    assert state.hand_limits == [_HAND_LIMIT, _HAND_LIMIT, _HAND_LIMIT + 1]
+    assert state.pearl_deck_size == _TOTAL_PEARLS
+    assert state.pearl_discard_size == 3
+    assert state.character_discard_size == 2
+    assert state.character_deck_size == sum(character.copies for character in CHARACTERS)
+    assert state.actions_left == 3
+    assert state.final_turns is None
+    assert state.peeked_character is None
+    assert state.pending_step is None
+    state.hands[1].clear()
+    state.portals[0].clear()
+    assert state.hands[1] == [2, 5, 5]
+    assert state.portals[0] == ["goblin"]
+
+
+def test_molthar_state_peeked_character() -> None:
+    """The peeked top character names the player who knows it."""
+    state = pyspiel.load_game("python_portale_von_molthar").new_initial_state()
+    state._peeked_character = _character_index("lion")  # noqa: SLF001
+    state._peeked_by = 1  # noqa: SLF001
+    assert state.peeked_character == (1, "lion")
+
+
+def test_molthar_state_pending_step() -> None:
+    """A payment with several plans is visible as the pending step."""
+    state = pyspiel.load_game("python_portale_von_molthar").new_initial_state()
+    card = _character_index("bilbo_odd")
+    state._portals[0] = [card]  # noqa: SLF001
+    state._hands[0] = Counter({1: 1, 3: 1, 5: 1, 7: 1})  # noqa: SLF001
+    state._pearl_display = [2, 2, 4, 4]  # noqa: SLF001
+    state._character_display = [card, card]  # noqa: SLF001
+    state.apply_action(Action.ACTIVATE_0)
+    assert isinstance(state.pending_step, PaymentDecision)
+    assert state.pending_step.target_slot == 0

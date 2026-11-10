@@ -1,0 +1,209 @@
+/* App layout around the Molthar Illuminated components; uses only design tokens. */
+
+body {
+  background: var(--surface);
+  color: var(--ink);
+}
+
+/* The design system disables buttons with a dashed border; a disabled primary button
+   drops its vermilion fill too, so its label keeps 4.5:1 contrast. */
+.mi-btn-primary:disabled {
+  background: var(--surface-raised);
+  border-color: var(--line-strong);
+  box-shadow: none;
+}
+
+.app-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-8);
+  border-bottom: 1px solid var(--line-strong);
+  box-shadow: 0 3px 0 -2px var(--line);
+  margin-bottom: var(--space-6);
+}
+
+.app-title {
+  margin: 0 auto 0 0;
+  font: 600 26px/30px var(--font-display);
+  color: var(--accent);
+}
+
+.app-display {
+  margin: 0;
+  font: 600 44px/46px var(--font-display);
+  color: var(--accent);
+  text-align: center;
+}
+
+.app-lede {
+  margin: var(--space-2) 0 0;
+  text-align: center;
+  font: italic 400 17px/22px var(--font-serif);
+  color: var(--ink-muted);
+}
+
+.app-page {
+  max-width: 880px;
+  margin: 0 auto;
+  padding: 0 var(--space-4) var(--space-8);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.app-columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: var(--space-6);
+}
+
+.app-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.app-form .mi-btn {
+  align-self: flex-start;
+}
+
+.app-text {
+  margin: 0;
+  font: 400 15px/21px var(--font-serif);
+  color: var(--ink-muted);
+}
+
+.app-code {
+  font: 700 34px/34px var(--font-serif);
+  font-variant-numeric: lining-nums;
+  letter-spacing: 0.12em;
+  color: var(--ink);
+}
+
+.app-seats {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.app-seats li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font: 600 22px/26px var(--font-display);
+}
+
+.app-presence {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 2px solid var(--portal);
+  box-sizing: border-box;
+  flex: none;
+}
+
+.app-presence.is-on {
+  background: var(--portal);
+}
+
+.app-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* ---------- Game table ---------- */
+.table-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: var(--space-6);
+  padding: 0 var(--space-8) var(--space-8);
+  align-items: start;
+}
+
+.table-main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  min-width: 0;
+}
+
+.table-opponents {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+}
+
+.table-chronicle {
+  position: sticky;
+  top: var(--space-4);
+  max-height: calc(100vh - 2 * var(--space-4));
+  overflow-y: auto;
+}
+
+.table-peek {
+  margin: var(--space-3) 0 0;
+  color: var(--ink-muted);
+}
+
+.table-panel-body {
+  display: flex;
+  gap: var(--space-6);
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.table-panel-text {
+  flex: 1;
+  min-width: 240px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.table-hand-row {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.table-chip {
+  font: 700 13px/17px var(--font-serif);
+  font-variant-numeric: lining-nums;
+  padding: 3px var(--space-2);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line-strong);
+  background: var(--surface-sunken);
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.table-chip:hover {
+  border-color: var(--ink);
+}
+
+.table-chip:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+@media (max-width: 1100px) {
+  .table-grid {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 0 var(--space-4) var(--space-6);
+  }
+
+  .table-chronicle {
+    position: static;
+    max-height: 360px;
+  }
+
+  .app-bar {
+    padding: var(--space-3) var(--space-4);
+  }
+}

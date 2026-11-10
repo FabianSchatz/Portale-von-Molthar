@@ -329,6 +329,83 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
     # region properties
 
     @property
+    def actions_left(self) -> int:
+        """Actions the current player still has this turn."""
+        return self._actions_left
+
+    @property
+    def activated_characters(self) -> list[list[str]]:
+        """Character ids in each player's activated area, in activation order."""
+        return [[CHARACTERS[card].id for card in cards] for cards in self._activated_characters]
+
+    @property
+    def character_deck_size(self) -> int:
+        """Number of hidden cards left in the character draw deck."""
+        return self._character_deck.total()
+
+    @property
+    def character_discard_size(self) -> int:
+        """Number of cards on the character discard pile."""
+        return self._character_discard.total()
+
+    @property
+    def character_display(self) -> list[str]:
+        """Character ids of the face-up character display, by slot."""
+        return [CHARACTERS[card].id for card in self._character_display]
+
+    @property
+    def diamonds(self) -> list[int]:
+        """Diamonds owned by each player."""
+        return list(self._diamonds)
+
+    @property
+    def final_turns(self) -> int | None:
+        """Turns left once the end of the game was triggered, else ``None``."""
+        return self._final_turns
+
+    @property
+    def hand_limits(self) -> list[int]:
+        """End-of-turn pearl hand limit of each player, including ability bonuses."""
+        return [self._hand_limit(player) for player in range(self._num_players)]
+
+    @property
+    def hands(self) -> list[list[int]]:
+        """Sorted pearl values in each player's hand; private information of each player."""
+        return [sorted(hand.elements()) for hand in self._hands]
+
+    @property
+    def pearl_deck_size(self) -> int:
+        """Number of hidden cards left in the pearl draw deck."""
+        return self._pearl_deck.total()
+
+    @property
+    def pearl_discard_size(self) -> int:
+        """Number of cards on the pearl discard pile."""
+        return self._pearl_discard.total()
+
+    @property
+    def pearl_display(self) -> list[int]:
+        """Pearl values of the face-up pearl display, by slot."""
+        return list(self._pearl_display)
+
+    @property
+    def peeked_character(self) -> tuple[int, str] | None:
+        """``(player, character id)`` of a top character known to that player, else ``None``."""
+        if self._peeked_character is None or self._peeked_by is None:
+            return None
+        return self._peeked_by, CHARACTERS[self._peeked_character].id
+
+    @property
+    def pending_step(self) -> PendingStep | None:
+        """The immutable decision or chance draw to resolve next, if any."""
+        return self._pending_step
+
+    @property
+    def portals(self) -> list[list[str]]:
+        """Character ids on each player's portal, by slot."""
+        return [[CHARACTERS[card].id for card in cards] for cards in self._portals]
+
+    @property
     def scores(self) -> list[int]:
         """Power points collected by each player so far."""
         return list(self._scores)

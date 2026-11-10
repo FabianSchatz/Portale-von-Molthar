@@ -1,0 +1,96 @@
+/* Molthar Illuminated II — generated from the design system's tokens.json. Do not edit by hand. */
+
+:root,
+[data-theme="parchment"] {
+  --font-display: "Grenze Gotisch", "Old English Text MT", Georgia, serif;
+  --font-serif: "Alegreya", "Palatino Linotype", Palatino, Georgia, serif;
+  --font-caps: "Alegreya SC", "Palatino Linotype", Georgia, serif;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --radius-sm: 2px;
+  --radius-md: 4px;
+  --radius-card: 7px;
+  --card-w: 112px;
+  --card-h: 156px;
+  --card-w-sm: 64px;
+  --card-h-sm: 90px;
+  color-scheme: light;
+  --surface: #ecdfc3;
+  --surface-raised: #f5ecd7;
+  --surface-sunken: #e0cfab;
+  --line: #cdb88c;
+  --line-strong: #8b6b43;
+  --ink: #2a1c12;
+  --ink-muted: #5c4633;
+  --accent: #9c2d1b;
+  --on-accent: #fbf4e3;
+  --portal: #385f2e;
+  --power: #74500a;
+  --diamond: #284a8f;
+  --danger: #7c1d2b;
+  --focus-ring: #1e3a75;
+  --card-face: #f4ead2;
+  --card-shade: #e6d6b2;
+  --card-ink: #2a1c12;
+  --card-rubric: #a83324;
+  --card-vine: #4d7a3a;
+  --card-lapis: #27458a;
+  --card-gold: #c9a042;
+  --card-gold-light: #ecd28a;
+  --card-ring-green: #33691f;
+  --card-ring-green-soft: #dde6c6;
+  --card-ring-red: #b3261e;
+  --card-ring-red-soft: #f2d4cb;
+  --card-ring-blue: #22549f;
+  --card-ring-blue-soft: #d4ddee;
+  --card-flesh: #e7c39b;
+  --card-umber: #7a5233;
+  --card-stone: #8f887c;
+  --card-tint: #d7c39a;
+  --shadow-card: 0 1px 0 rgba(42,28,18,0.25), 0 3px 8px rgba(42,28,18,0.22);
+  --glow-portal: 0 0 0 2px #385f2e, 0 0 0 5px rgba(56,95,46,0.25);
+  --glow-accent: 0 0 0 2px #9c2d1b, 0 6px 12px rgba(42,28,18,0.3);
+}
+
+[data-theme="leather"] {
+  color-scheme: dark;
+  --surface: #221812;
+  --surface-raised: #2d2119;
+  --surface-sunken: #18110c;
+  --line: #4a3828;
+  --line-strong: #8f7352;
+  --ink: #f1e5c9;
+  --ink-muted: #c2ad8b;
+  --accent: #e06a4c;
+  --on-accent: #221812;
+  --portal: #8dbf72;
+  --power: #e2b955;
+  --diamond: #8fa9e6;
+  --danger: #f29b8c;
+  --focus-ring: #ffd98a;
+  --card-face: #f4ead2;
+  --card-shade: #e6d6b2;
+  --card-ink: #2a1c12;
+  --card-rubric: #a83324;
+  --card-vine: #4d7a3a;
+  --card-lapis: #27458a;
+  --card-gold: #c9a042;
+  --card-gold-light: #ecd28a;
+  --card-ring-green: #33691f;
+  --card-ring-green-soft: #dde6c6;
+  --card-ring-red: #b3261e;
+  --card-ring-red-soft: #f2d4cb;
+  --card-ring-blue: #22549f;
+  --card-ring-blue-soft: #d4ddee;
+  --card-flesh: #e7c39b;
+  --card-umber: #7a5233;
+  --card-stone: #8f887c;
+  --card-tint: #d7c39a;
+  --shadow-card: 0 1px 0 #000000, 0 4px 12px rgba(0,0,0,0.55);
+  --glow-portal: 0 0 0 2px #8dbf72, 0 0 12px rgba(141,191,114,0.45);
+  --glow-accent: 0 0 0 2px #e06a4c, 0 6px 14px rgba(0,0,0,0.5);
+}

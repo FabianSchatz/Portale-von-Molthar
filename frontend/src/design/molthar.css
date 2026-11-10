@@ -1,0 +1,267 @@
+/* Molthar Illuminated II component styles — copied from the design system's bundle.css. */
+/* Fonts load in index.html. Keep this file in sync with the design system. */
+
+body { margin: 0; font-family: var(--font-serif); font-variant-numeric: lining-nums; background: var(--surface); color: var(--ink); -webkit-font-smoothing: antialiased; }
+.mi-row { display: flex; gap: var(--space-3); align-items: flex-end; flex-wrap: wrap; padding: var(--space-4); }
+.mi-col { display: flex; flex-direction: column; gap: var(--space-3); padding: var(--space-4); }
+.mi-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.mi-label { font-family: var(--font-caps); font-size: 12px; line-height: 15px; font-weight: 700; letter-spacing: .06em; text-transform: lowercase; }
+.mi-icon { display: inline-block; vertical-align: middle; flex: none; }
+
+/* ---------- Button ---------- */
+.mi-btn { font: 700 15px/20px var(--font-serif); font-variant-numeric: lining-nums; display: inline-flex; align-items: center; gap: var(--space-2); padding: var(--space-2) var(--space-4); min-height: 40px; box-sizing: border-box; border-radius: var(--radius-md); border: 1px solid var(--line-strong); background: var(--surface-raised); color: var(--ink); cursor: pointer; }
+.mi-btn:hover:not(:disabled) { border-color: var(--ink); }
+.mi-btn:disabled { color: var(--ink-muted); border-style: dashed; cursor: not-allowed; }
+.mi-btn-primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); box-shadow: inset 0 0 0 2px var(--accent), inset 0 0 0 3px var(--card-gold-light); }
+.mi-btn-danger { background: transparent; color: var(--danger); border-color: var(--danger); }
+.mi-btn .mi-cost { font: 700 12px/15px var(--font-caps); letter-spacing: .06em; text-transform: lowercase; opacity: .9; }
+.mi-btn:focus-visible, .mi-card:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+
+/* ---------- Stat ---------- */
+.mi-stat { display: inline-flex; align-items: center; gap: var(--space-1); padding: 2px var(--space-2) 2px 5px; border-radius: var(--radius-sm); background: var(--surface-sunken); border: 1px solid var(--line-strong); font: 700 15px/20px var(--font-serif); font-variant-numeric: lining-nums; color: var(--ink); white-space: nowrap; }
+.mi-stat-power .mi-icon { color: var(--power); }
+.mi-stat-diamond .mi-icon { color: var(--diamond); }
+.mi-stat-hand .mi-icon, .mi-stat-actions .mi-icon { color: var(--ink-muted); }
+.mi-stat small { font: 500 13px/17px var(--font-serif); color: var(--ink-muted); }
+.mi-stat-goal { border-color: var(--power); box-shadow: inset 0 0 0 1px var(--power); }
+
+/* ---------- Cards: shared ---------- */
+.mi-card { position: relative; box-sizing: border-box; width: var(--card-w); height: var(--card-h); border-radius: var(--radius-card); box-shadow: var(--shadow-card); flex: none; overflow: hidden; background: var(--card-face); color: var(--card-ink); transition: transform .12s ease, box-shadow .12s ease; text-align: left; padding: 0; border: 0; font: inherit; }
+button.mi-card { cursor: pointer; }
+.mi-card-sm { width: var(--card-w-sm); height: var(--card-h-sm); border-radius: 5px; }
+.mi-card-lg { width: calc(var(--card-w) * 1.5); height: calc(var(--card-h) * 1.5); border-radius: 10px; }
+.mi-card.is-selected { box-shadow: var(--glow-accent); transform: translateY(-8px); }
+.mi-card.is-activatable { box-shadow: var(--glow-portal); }
+.mi-card.is-disabled { opacity: .45; }
+.mi-orn { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.mi-orn .fr-out { fill: none; stroke: var(--card-rubric); stroke-width: 1.6; }
+.mi-orn .fr-in { fill: none; stroke: var(--card-vine); stroke-width: 1; }
+.mi-orn .vine { fill: none; stroke: var(--card-vine); stroke-width: 1.3; stroke-linecap: round; }
+.mi-orn .leaf { fill: var(--card-vine); }
+.mi-orn .fl-red { fill: var(--card-rubric); }
+.mi-orn .fl-blue { fill: var(--card-lapis); }
+.mi-orn .fl-eye { fill: var(--card-gold); }
+.mi-orn .gold { fill: none; stroke: var(--card-gold); stroke-width: 1.2; }
+.mi-orn .gold-f { fill: var(--card-gold-light); }
+.mi-orn .gold-line { fill: none; stroke: var(--card-gold); stroke-width: .9; }
+
+/* ---------- Pearl card ---------- */
+.mi-pv-corner { position: absolute; z-index: 1; top: 10px; left: 12px; font: 700 21px/1 var(--font-serif); font-variant-numeric: lining-nums; color: var(--card-rubric); }
+.mi-pv-corner.b { top: auto; left: auto; bottom: 10px; right: 12px; transform: rotate(180deg); }
+.mi-pv-tile { position: absolute; z-index: 1; left: 50%; top: 50%; width: 60px; height: 60px; margin: -30px 0 0 -30px; box-sizing: border-box; border-radius: var(--radius-sm); background: var(--card-lapis); border: 2px solid var(--card-gold); box-shadow: inset 0 0 0 2px var(--card-lapis), inset 0 0 0 3px var(--card-gold-light); display: grid; place-items: center; }
+.mi-pv-tile svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.mi-pv-tile svg path { fill: none; stroke: var(--card-gold-light); stroke-width: 1.1; stroke-linecap: round; opacity: .7; }
+.mi-pv-tile svg .f { fill: var(--card-gold-light); stroke: none; }
+.mi-pv-num { position: relative; font: 700 34px/1 var(--font-serif); font-variant-numeric: lining-nums; color: var(--card-gold-light); text-shadow: 0 1px 0 rgba(0,0,0,.35); }
+.mi-pv-swap { position: absolute; z-index: 1; left: 50%; bottom: 14px; margin-left: -9px; color: var(--card-rubric); line-height: 0; }
+.mi-pv-mod { position: absolute; z-index: 1; left: 50%; top: 13px; transform: translateX(-50%); display: inline-flex; align-items: center; gap: 2px; padding: 1px 5px 1px 3px; border-radius: var(--radius-sm); background: var(--card-lapis); color: var(--card-gold-light); font: 700 12px/14px var(--font-serif); font-variant-numeric: lining-nums; white-space: nowrap; }
+.mi-card-sm .mi-pv-corner, .mi-card-sm .mi-pv-swap { display: none; }
+.mi-card-sm .mi-pv-tile { width: 38px; height: 38px; margin: -19px 0 0 -19px; border-width: 1.5px; box-shadow: inset 0 0 0 1px var(--card-lapis), inset 0 0 0 2px var(--card-gold-light); }
+.mi-card-sm .mi-pv-num { font-size: 22px; }
+.mi-card-sm .mi-pv-mod { top: 6px; font-size: 10px; }
+.mi-card-lg .mi-pv-corner { top: 15px; left: 18px; font-size: 31px; }
+.mi-card-lg .mi-pv-corner.b { top: auto; left: auto; bottom: 15px; right: 18px; }
+.mi-card-lg .mi-pv-tile { width: 90px; height: 90px; margin: -45px 0 0 -45px; border-width: 3px; box-shadow: inset 0 0 0 3px var(--card-lapis), inset 0 0 0 4px var(--card-gold-light); }
+.mi-card-lg .mi-pv-num { font-size: 52px; }
+.mi-card-lg .mi-pv-swap { bottom: 21px; }
+.mi-card-lg .mi-pv-mod { top: 20px; font-size: 15px; line-height: 18px; }
+
+/* ---------- Character card (one look for every character) ---------- */
+.mi-ch { display: flex; flex-direction: column; padding: 12px 11px 10px; gap: 6px; }
+.mi-ribbon { position: relative; z-index: 1; display: flex; align-items: center; justify-content: center; min-height: 24px; padding: 3px 13px; box-sizing: border-box; background: var(--card-gold); color: var(--card-ink); clip-path: polygon(0 0, 100% 0, 92% 50%, 100% 100%, 0 100%, 8% 50%); text-align: center; font: 600 15px/17px var(--font-display); }
+.mi-ribbon.is-long { font-size: 12.5px; line-height: 13px; }
+.mi-ribbon.is-xlong { font-size: 11px; line-height: 13px; letter-spacing: -.01em; }
+.mi-chback .mi-ch-req { margin-bottom: 14px; }
+.mi-ch-req { position: relative; z-index: 1; flex: 1; min-height: 0; border-radius: var(--radius-sm); background: var(--card-shade); padding: 6px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; text-align: center; overflow: hidden; }
+.mi-ch-req .mi-label, .mi-cb-timing { color: var(--card-rubric); font-size: 11px; line-height: 13px; }
+.mi-ch-reqtext { font: 500 13px/16px var(--font-serif); font-variant-numeric: lining-nums; color: var(--card-ink); }
+.mi-chips { display: flex; flex-wrap: wrap; justify-content: center; gap: 3px; }
+.mi-chip { width: 18px; height: 18px; box-sizing: border-box; border-radius: var(--radius-sm); background: var(--card-lapis); border: 1px solid var(--card-gold); color: var(--card-gold-light); display: grid; place-items: center; font: 700 12px/1 var(--font-serif); font-variant-numeric: lining-nums; }
+.mi-chip-dia { background: var(--card-face); color: var(--card-lapis); border-color: var(--card-lapis); }
+.mi-chip-or { font: 700 11px/18px var(--font-caps); text-transform: lowercase; color: var(--card-rubric); }
+.mi-ch-rew { position: relative; z-index: 1; display: flex; align-items: center; justify-content: center; gap: 8px; height: 20px; }
+.mi-ch-pts { display: inline-flex; align-items: center; gap: 2px; font: 700 17px/1 var(--font-serif); font-variant-numeric: lining-nums; color: var(--card-ink); }
+.mi-ch-pts .mi-icon { color: var(--card-gold); }
+.mi-ch-dia { display: inline-flex; gap: 1px; color: var(--card-lapis); }
+.mi-card-sm.mi-ch { padding: 6px 5px 5px; gap: 3px; }
+.mi-card-sm .mi-ribbon { font-size: 9px; line-height: 10px; padding: 2px 7px; min-height: 14px; }
+.mi-card-sm .mi-ch-req { display: none; }
+.mi-card-sm .mi-ch-rew { flex: 1; flex-direction: column; gap: 2px; height: auto; }
+.mi-card-sm .mi-ch-pts { font-size: 14px; }
+.mi-card-lg.mi-ch { padding: 18px 16px 15px; gap: 9px; }
+.mi-card-lg .mi-ribbon { font-size: 21px; line-height: 23px; min-height: 34px; padding: 4px 20px; }
+.mi-card-lg .mi-ribbon.is-long { font-size: 18px; line-height: 19px; }
+.mi-card-lg .mi-ribbon.is-xlong { font-size: 16px; line-height: 19px; }
+.mi-card-lg.mi-chback .mi-ch-req { margin-bottom: 21px; }
+.mi-card-lg .mi-ch-req .mi-label, .mi-card-lg .mi-cb-timing { font-size: 14px; line-height: 17px; }
+.mi-card-lg .mi-chip { width: 26px; height: 26px; font-size: 16px; }
+.mi-card-lg .mi-ch-reqtext { font-size: 17px; line-height: 21px; }
+.mi-card-lg .mi-ch-rew { height: 28px; }
+.mi-card-lg .mi-ch-pts { font-size: 24px; }
+
+/* ---------- Character back: the ability, same look for every card ---------- */
+.mi-cb-text { font: 500 12.5px/15px var(--font-serif); font-variant-numeric: lining-nums; color: var(--card-ink); }
+.mi-cb-none { font: italic 400 12.5px/15px var(--font-serif); color: var(--card-ink); }
+.mi-card-lg .mi-cb-text, .mi-card-lg .mi-cb-none { font-size: 17px; line-height: 21px; }
+.mi-card-sm .mi-cb-icon { display: grid; place-items: center; flex: 1; color: var(--card-rubric); }
+.mi-cb-icon { display: none; }
+
+/* ---------- Deck backs and the diamond side ---------- */
+.mi-back-red { background: var(--card-rubric); }
+.mi-back-blue { background: var(--card-lapis); }
+.mi-back .mi-orn .lat { fill: none; stroke: var(--card-gold); stroke-width: .8; }
+.mi-back .mi-orn .dot { fill: var(--card-gold-light); }
+.mi-back .mi-orn .frame { fill: none; stroke: var(--card-gold); stroke-width: 1.6; }
+.mi-back .mi-orn .frame2 { fill: none; stroke: var(--card-gold-light); stroke-width: .8; }
+.mi-dia .mi-orn .gem { fill: var(--card-gold-light); }
+.mi-dia .mi-orn .facet { fill: none; stroke: var(--card-lapis); stroke-width: 1; }
+
+/* ---------- Slot ---------- */
+.mi-slot { box-sizing: border-box; width: var(--card-w); height: var(--card-h); border-radius: var(--radius-card); border: 1.5px dashed var(--line-strong); background: var(--surface-sunken); display: grid; place-items: center; color: var(--ink-muted); flex: none; }
+.mi-slot-sm { width: var(--card-w-sm); height: var(--card-h-sm); border-radius: 5px; }
+
+/* ---------- Pile ---------- */
+.mi-pile { display: inline-flex; flex-direction: column; align-items: center; gap: var(--space-1); }
+.mi-pile-stack { position: relative; }
+.mi-pile-stack.has-depth::before, .mi-pile-stack.has-depth::after { content: ""; position: absolute; inset: 0; border-radius: var(--radius-card); background: var(--card-shade); border: 1px solid var(--line-strong); }
+.mi-pile-stack.has-depth::before { transform: translate(4px, 4px); }
+.mi-pile-stack.has-depth::after { transform: translate(2px, 2px); }
+.mi-pile-stack > * { position: relative; z-index: 1; }
+.mi-pile-cap { font: 500 13px/17px var(--font-serif); font-variant-numeric: lining-nums; color: var(--ink-muted); }
+.mi-pile-cap b { color: var(--ink); }
+.mi-pile-discard .mi-card { opacity: .75; }
+
+/* ---------- Panels ---------- */
+.mi-panel { background: var(--surface-raised); border: 1px solid var(--line-strong); border-radius: var(--radius-md); box-shadow: inset 0 0 0 3px var(--surface-raised), inset 0 0 0 4px var(--line); padding: var(--space-4); box-sizing: border-box; }
+.mi-panel-h { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3); margin: 0 0 var(--space-3); font: 600 22px/26px var(--font-display); color: var(--accent); }
+.mi-panel-h .mi-label { color: var(--ink-muted); }
+
+/* ---------- Portal: a pointed arch ---------- */
+.mi-portal { position: relative; display: inline-flex; flex-direction: column; width: 272px; margin-top: 72px; }
+.mi-portal-arch { position: absolute; left: 0; top: -72px; width: 272px; height: 72px; }
+.mi-portal-arch .a-fill { fill: var(--surface-sunken); stroke: var(--portal); stroke-width: 2; }
+.mi-portal-arch .a-in { fill: none; stroke: var(--card-gold); stroke-width: 1; }
+.mi-portal-body { position: relative; display: flex; gap: var(--space-3); padding: 2px 16px 14px; border: 2px solid var(--portal); border-top: 0; background: var(--surface-sunken); }
+.mi-portal-body::before { content: ""; position: absolute; left: 5px; right: 5px; top: 0; bottom: 5px; border: 1px solid var(--card-gold); border-top: 0; pointer-events: none; }
+.mi-portal-cap { position: absolute; left: 0; right: 0; top: -36px; display: flex; justify-content: center; align-items: center; gap: var(--space-2); color: var(--portal); }
+.mi-portal-cap .mi-label + .mi-label { color: var(--ink-muted); }
+.mi-portal.is-active .mi-portal-body { box-shadow: var(--glow-portal); clip-path: inset(0 -20px -20px -20px); }
+.mi-portal-sm { width: 156px; margin-top: 44px; }
+.mi-portal-sm .mi-portal-arch { top: -44px; width: 156px; height: 44px; }
+.mi-portal-sm .mi-portal-body { gap: var(--space-2); padding: 2px 8px 8px; }
+.mi-portal-sm .mi-portal-body::before { left: 3px; right: 3px; bottom: 3px; }
+.mi-portal-sm .mi-portal-cap { top: -22px; }
+
+/* ---------- Player area ---------- */
+.mi-player { display: flex; flex-direction: column; gap: var(--space-3); }
+.mi-player.is-active { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent), inset 0 0 0 3px var(--surface-raised), inset 0 0 0 4px var(--accent); }
+.mi-player-h { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+.mi-player-name { font: 600 22px/26px var(--font-display); margin-right: auto; display: inline-flex; align-items: center; gap: var(--space-2); }
+.mi-turn-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--accent); flex: none; }
+.mi-you { color: var(--ink-muted); font: italic 400 14px/18px var(--font-serif); }
+.mi-player-body { display: flex; gap: var(--space-4); align-items: flex-end; flex-wrap: wrap; }
+.mi-activated { display: flex; flex-direction: column; gap: var(--space-2); }
+.mi-activated .mi-label { color: var(--ink-muted); }
+.mi-activated-cards { display: flex; gap: var(--space-1); flex-wrap: wrap; }
+
+/* ---------- Hand ---------- */
+.mi-hand-wrap { display: flex; flex-direction: column; gap: var(--space-2); }
+.mi-hand { display: flex; align-items: flex-end; gap: var(--space-2); padding-top: 10px; }
+.mi-hand-limit { font: 500 13px/17px var(--font-serif); font-variant-numeric: lining-nums; color: var(--ink-muted); }
+.mi-hand-limit.is-over { color: var(--danger); font-weight: 700; }
+
+/* ---------- Turn banner & action bar ---------- */
+.mi-hud { display: flex; align-items: center; gap: var(--space-4); flex-wrap: wrap; }
+.mi-turn { display: flex; flex-direction: column; gap: var(--space-1); margin-right: auto; }
+.mi-turn-title { margin: 0; font: 600 26px/30px var(--font-display); color: var(--ink); }
+.mi-pips { display: inline-flex; align-items: center; gap: 6px; }
+.mi-pip { width: 12px; height: 12px; box-sizing: border-box; border-radius: 50%; border: 2px solid var(--accent); }
+.mi-pip.is-on { background: var(--accent); }
+.mi-pips-cap { margin-left: var(--space-1); font: italic 400 14px/18px var(--font-serif); font-variant-numeric: lining-nums; color: var(--ink-muted); }
+.mi-actions { display: flex; gap: var(--space-2); flex-wrap: wrap; }
+.mi-endgame { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-2) var(--space-3); border: 1px solid var(--danger); border-radius: var(--radius-sm); color: var(--danger); background: var(--surface-sunken); font: 700 15px/20px var(--font-serif); font-variant-numeric: lining-nums; }
+
+/* ---------- Market ---------- */
+.mi-market { display: flex; gap: var(--space-6); flex-wrap: wrap; align-items: flex-start; }
+.mi-market-zone { display: flex; gap: var(--space-2); align-items: flex-start; }
+
+/* ---------- Log ---------- */
+.mi-log { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 5px; font: 400 15px/21px var(--font-serif); font-variant-numeric: lining-nums; }
+.mi-log li { display: flex; gap: var(--space-2); align-items: baseline; }
+.mi-log-n { width: 18px; flex: none; text-align: right; font: 700 13px/21px var(--font-serif); color: var(--accent); }
+.mi-log-who { font-weight: 700; color: var(--ink); flex: none; }
+.mi-log-what { color: var(--ink-muted); }
+.mi-log-what b { color: var(--ink); font-weight: 700; }
+.mi-log li.t-power .mi-log-what b { color: var(--power); }
+.mi-log li.t-danger .mi-log-what { color: var(--danger); font-weight: 500; }
+.mi-portal.is-active .mi-portal-arch .a-fill { stroke-width: 3; }
+.mi-card-sm .mi-ribbon.is-long, .mi-card-sm .mi-ribbon.is-xlong { font-size: 7.5px; line-height: 9px; padding: 2px 6px; }
+
+/* ======== Illuminated II: portrait character cards ======== */
+/* Portraits */
+.mi-pt { display: block; width: 100%; height: 100%; }
+.mi-pt .sky { fill: var(--card-shade); }
+.mi-pt .ground { fill: var(--card-vine); opacity: .3; }
+.mi-pt .r { fill: var(--card-rubric); } .mi-pt .b { fill: var(--card-lapis); } .mi-pt .g { fill: var(--card-vine); }
+.mi-pt .y { fill: var(--card-gold); } .mi-pt .yl { fill: var(--card-gold-light); } .mi-pt .s { fill: var(--card-flesh); }
+.mi-pt .u { fill: var(--card-umber); } .mi-pt .k { fill: var(--card-stone); } .mi-pt .w { fill: var(--card-face); }
+.mi-pt .i { fill: var(--card-ink); } .mi-pt .h { fill: var(--card-tint); }
+.mi-pt .o { stroke: var(--card-ink); stroke-width: 1.1; stroke-linejoin: round; stroke-linecap: round; }
+.mi-pt .l { fill: none; stroke: var(--card-ink); stroke-width: 1.1; stroke-linejoin: round; stroke-linecap: round; }
+.mi-pt .lw { fill: none; stroke: var(--card-face); stroke-width: 1.2; stroke-linecap: round; }
+.mi-pt .f { opacity: .55; }
+.mi-pt .pt-name { font: 600 11px var(--font-display); fill: var(--card-ink); }
+
+/* Character card: ring colour = ability type */
+.mi-ch2 { --ring: var(--card-ring-green); --ring-soft: var(--card-ring-green-soft); border: 4px solid var(--ring); box-shadow: var(--shadow-card), inset 0 0 0 1px var(--card-gold); display: flex; flex-direction: column; gap: 3px; padding: 3px; }
+.mi-ch2.k-red { --ring: var(--card-ring-red); --ring-soft: var(--card-ring-red-soft); }
+.mi-ch2.k-blue { --ring: var(--card-ring-blue); --ring-soft: var(--card-ring-blue-soft); }
+.mi-ch2.is-activatable { box-shadow: var(--glow-portal), inset 0 0 0 1px var(--card-gold); }
+.mi-ch2.is-selected { box-shadow: var(--glow-accent), inset 0 0 0 1px var(--card-gold); }
+.mi-ch2-pic { position: relative; flex: none; height: 56px; border-radius: 3px 3px 2px 2px; overflow: hidden; box-shadow: inset 0 0 0 1px var(--card-gold); }
+.mi-ch2-pic .mi-pt { position: absolute; inset: 0; }
+.mi-ch2-pts { position: absolute; left: 2px; top: 2px; display: inline-flex; align-items: center; gap: 1px; padding: 1px 4px 1px 2px; border-radius: var(--radius-sm); background: var(--card-gold); color: var(--card-ink); font: 700 12px/14px var(--font-serif); font-variant-numeric: lining-nums; box-shadow: 0 0 0 1px var(--card-ink); }
+.mi-ch2-dia { position: absolute; right: 2px; top: 2px; display: inline-flex; gap: 1px; padding: 2px 3px; border-radius: var(--radius-sm); background: var(--card-face); color: var(--card-lapis); box-shadow: 0 0 0 1px var(--card-lapis); }
+.mi-ch2-req { flex: none; display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 2px 4px; padding: 2px 0 1px; text-align: center; }
+.mi-ch2-req .mi-label { color: var(--card-ink); font-size: 9.5px; line-height: 11px; width: 100%; }
+.mi-ch2 .mi-chip { width: 15px; height: 15px; font-size: 10.5px; }
+.mi-ch2 .mi-chip-or { line-height: 15px; font-size: 10px; }
+.mi-chip-word { font: 700 10.5px/15px var(--font-serif); color: var(--card-ink); }
+.mi-ch2 .mi-ch-reqtext { font: 600 11px/13px var(--font-serif); color: var(--card-ink); }
+.mi-ch2-ab { flex: 1; min-height: 0; border-radius: 2px; background: var(--ring-soft); padding: 3px 4px; display: flex; flex-direction: column; gap: 1px; overflow: hidden; }
+.mi-ch2-kind { display: flex; align-items: center; gap: 3px; color: var(--ring); font: 700 9.5px/11px var(--font-caps); letter-spacing: .04em; text-transform: lowercase; white-space: nowrap; }
+.mi-ch2-text { font: 500 10px/12px var(--font-serif); font-variant-numeric: lining-nums; color: var(--card-ink); }
+
+/* Inspect size */
+.mi-card-lg.mi-ch2 { border-width: 6px; gap: 5px; padding: 4px; }
+.mi-card-lg .mi-ch2-pic { height: 92px; }
+.mi-card-lg .mi-ch2-pts { font-size: 17px; line-height: 20px; padding: 1px 6px 1px 3px; }
+.mi-card-lg .mi-ch2-req .mi-label { font-size: 13px; line-height: 15px; }
+.mi-card-lg.mi-ch2 .mi-chip { width: 22px; height: 22px; font-size: 14px; }
+.mi-card-lg.mi-ch2 .mi-chip-or, .mi-card-lg .mi-chip-word { font-size: 14px; line-height: 22px; }
+.mi-card-lg.mi-ch2 .mi-ch-reqtext { font-size: 15px; line-height: 18px; }
+.mi-card-lg .mi-ch2-ab { padding: 5px 7px; gap: 3px; }
+.mi-card-lg .mi-ch2-kind { font-size: 13px; line-height: 15px; }
+.mi-card-lg .mi-ch2-text { font-size: 14.5px; line-height: 17px; }
+
+/* Compact: picture, ring and points only */
+.mi-card-sm.mi-ch2 { border-width: 3px; padding: 2px; }
+.mi-card-sm .mi-ch2-pic { flex: 1; height: auto; }
+.mi-card-sm .mi-ch2-req, .mi-card-sm .mi-ch2-ab { display: none; }
+.mi-card-sm .mi-ch2-pts { font-size: 10px; line-height: 12px; }
+
+/* Row: an activated character as a readable line */
+.mi-card-row.mi-ch2 { width: 252px; height: 64px; border-width: 3px; padding: 2px; display: grid; grid-template-columns: 74px 1fr; grid-template-rows: auto 1fr; column-gap: 5px; row-gap: 1px; }
+.mi-card-row .mi-ch2-pic { grid-row: 1 / 3; height: auto; }
+.mi-card-row .mi-ch2-req { justify-content: flex-start; padding: 1px 0 0; }
+.mi-card-row .mi-ch2-req .mi-label { width: auto; }
+.mi-card-row .mi-ch2-ab { padding: 2px 4px; }
+
+/* Activated list in a player area */
+.mi-activated-rows { display: flex; flex-direction: column; flex-wrap: wrap; gap: var(--space-1); max-height: 272px; align-content: flex-start; }
+.mi-activated-none { font: italic 400 14px/18px var(--font-serif); color: var(--ink-muted); }
+.mi-player-body { align-items: flex-start; }
+.mi-ch2 .mi-chips.is-dense { gap: 1px; }
+.mi-ch2 .mi-chips.is-dense .mi-chip { width: 12px; height: 14px; font-size: 9.5px; }
+.mi-ch2 .mi-chips.is-dense .mi-chip-or { font-size: 9px; padding: 0 1px; line-height: 14px; }
+.mi-card-lg.mi-ch2 .mi-chips.is-dense .mi-chip { width: 20px; height: 22px; font-size: 13px; }

@@ -19,6 +19,25 @@ issues later (ruff, mypy, pylint, bandit, flake8-errmsg, nb-clean) run
 automatically on every commit.
 
 
+## Play online
+
+The multiplayer server (`src/portale_von_molthar/services` and `entrypoints/api.py`)
+wraps the engine; the React frontend lives in `frontend/` and uses the
+*Molthar Illuminated* design system.
+
+```bash
+uv pip install -e ".[server]"
+uvicorn portale_von_molthar.entrypoints.api:app --reload   # API on :8000
+
+cd frontend && npm install && npm run dev                  # UI on :5173, proxies /api and /ws
+```
+
+For one process that serves everything, run `npm run build` in `frontend/` and start
+uvicorn without `--reload`: the API then serves `frontend/dist` at `/`. Share the URL
+(for example through `cloudflared tunnel` or `ngrok http 8000`) and the game code.
+Games live in memory, so restarting the server ends them.
+
+
 ## Tooling
 
 * `ruff` — formatting, import sorting, and linting.
