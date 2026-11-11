@@ -40,23 +40,21 @@
 </p>
 
 
-## How the AI works
+## Reinforcement Learning Agents
 
 The agent is a policy-value MLP, [`agents/ppo.py`](src/portale_von_molthar/agents/ppo.py),
 trained with Proximal Policy Optimization:
 
-- **One network for every seat.** The observation includes a one-hot of the acting player, so
-  one policy can play any seat and learns from all of them. Illegal moves are masked out
-  before sampling.
-- **Shaped reward.** Each decision is rewarded by the change in
+- **One network can play multiple seats** The observation includes a one-hot of the acting player, so one policy can play any seat and learns from all of them. Illegal moves are masked out before sampling.
+- **Reward function** Each decision is rewarded by the change in
   *(own score − mean opponent score)*. This is potential-based shaping, which leaves the
   optimal strategy unchanged but gives feedback every turn. A small step cost discourages
-  stalling, and the final win or loss is added at the end.
+  doing nothing, and the final win or loss is added at the end.
 - **Opponent pool.** Every few updates we freeze a snapshot of the network and add it to a
   pool. Half of the training games are played against these snapshots, so the policy keeps
   beating its older versions instead of cycling between strategies.
 - **No PyTorch needed at serve time.** The trained weights are exported to a small `.npz` file,
-  and the server runs inference in plain NumPy.
+  and the server runs inference in NumPy.
 
 | Matchup (1000 games, 1 vs 1)          | Win rate of the trained agent |
 |---------------------------------------|:-----------------------------:|
