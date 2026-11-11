@@ -1,4 +1,4 @@
-"""Self-play PPO agent for the simplified *Portale von Molthar*.
+"""Self-play PPO agent for *Portale von Molthar*.
 
 One policy-value network is shared by every seat: the observation tensor already
 contains a one-hot of the observing player, so a single network can play any seat

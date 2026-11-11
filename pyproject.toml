@@ -12,8 +12,8 @@ dependencies = [
     "open-spiel>=2.0.2",
     "scipy >= 1.14.1",
 ]
-authors = [{ name = "Your Name" }]
-description = "TBA"
+authors = [{ name = "Moritz Weber" }, { name = "Fabian Schatz" }]
+description = "The board game Die Portale von Molthar with online multiplayer and a self-play PPO opponent."
 readme = "README.md"
 classifiers = ["Programming Language :: Python :: 3"]
 

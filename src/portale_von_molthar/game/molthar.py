@@ -1,6 +1,6 @@
-"""A simplified *Portale von Molthar* implemented as an OpenSpiel Python game.
+"""*Portale von Molthar* implemented as an OpenSpiel Python game.
 
-Simplifications with respect to the printed rules (see module constants):
+Implementation notes with respect to the printed rules (see module constants):
 
 * Diamonds are tracked as a plain per-player counter rather than as physical
   character cards drawn from the deck. A diamond pays an explicit requirement
@@ -103,7 +103,7 @@ _MAX_REMAINING_ACTIONS: Final = (
     + 1
 )  # Dementor can add one action to the next player's turn.
 _TARGET_POINTS: Final = 12
-# Safety net: the simplified game has no forced progress, so players who only
+# Safety net: the game has no forced progress, so players who only
 # ever "pass" would loop forever. Discards add up to three more nodes per turn,
 # so a random game needs noticeably more of them than the actions alone. The
 # cap scales with the player count because every player needs their own turns.
@@ -276,7 +276,7 @@ _CHARACTER_INDEX_BY_ID: Final = {character.id: index for index, character in enu
 
 _GAME_TYPE: Final = pyspiel.GameType(
     short_name="python_portale_von_molthar",
-    long_name="Portale von Molthar (simplified)",
+    long_name="Portale von Molthar",
     dynamics=pyspiel.GameType.Dynamics.SEQUENTIAL,
     chance_mode=pyspiel.GameType.ChanceMode.EXPLICIT_STOCHASTIC,
     information=pyspiel.GameType.Information.IMPERFECT_INFORMATION,
@@ -293,7 +293,7 @@ _GAME_TYPE: Final = pyspiel.GameType(
 
 
 class MoltharState(pyspiel.State):  # type: ignore[misc]
-    """State of a simplified *Portale von Molthar* game."""
+    """State of a *Portale von Molthar* game."""
 
     def __init__(self, game: pyspiel.Game) -> None:
         super().__init__(game)
@@ -1581,7 +1581,7 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
 
 
 class MoltharGame(pyspiel.Game):  # type: ignore[misc]
-    """The simplified *Portale von Molthar* game."""
+    """The *Portale von Molthar* game."""
 
     def __init__(self, params: dict[str, Any] | None = None) -> None:
         params = params or {}

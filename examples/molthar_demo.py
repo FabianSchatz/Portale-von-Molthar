@@ -1,4 +1,4 @@
-"""Plays a random game of the simplified *Portale von Molthar*.
+"""Plays a random game of *Portale von Molthar*.
 
 Same pattern as tic_tac_toe_demo.py, but for our own game: chance nodes
 (display refills) are interleaved automatically with the players'
