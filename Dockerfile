@@ -11,6 +11,7 @@ FROM python:3.11-slim
 WORKDIR /app
 COPY pyproject.toml README.md ./
 COPY src/ src/
+COPY models/ models/
 # Editable install keeps the code in /app so the API finds /app/frontend/dist.
 RUN pip install --no-cache-dir -e ".[server]"
 COPY --from=frontend /app/frontend/dist frontend/dist
