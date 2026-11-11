@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 from typing import Final
 
-from portale_von_molthar.abilities import (
+from portale_von_molthar.game.abilities import (
     AbilityType,
     CharacterAbility,
     DiamondDecreaseAbility,
@@ -22,7 +22,7 @@ from portale_von_molthar.abilities import (
     TurnActionsAbility,
     VirtualPearlAbility,
 )
-from portale_von_molthar.requirements import (
+from portale_von_molthar.game.requirements import (
     AllOf,
     AnyOf,
     ConsecutiveValues,

@@ -8,7 +8,7 @@ from starlette.websockets import WebSocketDisconnect
 
 from portale_von_molthar.agents.bots import RandomBot
 from portale_von_molthar.entrypoints.api import create_app
-from portale_von_molthar.molthar import Action
+from portale_von_molthar.game.molthar import Action
 from portale_von_molthar.services.game_service import GameService
 
 

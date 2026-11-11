@@ -1,6 +1,6 @@
-# Die Portale von Molthar — Base Game Rules
+# Portale von Molthar
 
-This document describes the rules of the base game **Die Portale von Molthar** in a form intended for implementing the game in code.
+This document describes the rules of the base game **Portale von Molthar** in a form intended for implementing the game in code.
 
 Treat this file as the authoritative rules reference for the project.
 

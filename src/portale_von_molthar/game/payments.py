@@ -8,7 +8,7 @@ from collections import Counter
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, TypeAlias
 
-from portale_von_molthar.requirements import (
+from portale_von_molthar.game.requirements import (
     Requirement,
     required_card_counts,
     requirement_matches,

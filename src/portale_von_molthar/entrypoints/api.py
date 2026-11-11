@@ -78,7 +78,8 @@ Command: TypeAlias = Annotated[
     StartCommand | AddBotCommand | PlayCommand | ActivateCommand | DiscardCommand,
     Field(discriminator="type"),
 ]
-_COMMANDS: Final = TypeAdapter(Command)
+# pyright cannot take an Annotated alias as TypeForm; pydantic accepts it at runtime.
+_COMMANDS: Final = TypeAdapter(Command)  # pyright: ignore[reportArgumentType]
 
 
 class _Connections:

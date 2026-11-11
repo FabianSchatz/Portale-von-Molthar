@@ -5,9 +5,9 @@ from collections import Counter
 import pyspiel
 import pytest
 
-from portale_von_molthar.decisions import HandDrawStep, PaymentDecision, PeekStep
-from portale_von_molthar.payments import PearlPayment, hand_resource_options, payment_plans
-from portale_von_molthar.requirements import AnyOf, ExactValues, Parity, ParityValues
+from portale_von_molthar.game.decisions import HandDrawStep, PaymentDecision, PeekStep
+from portale_von_molthar.game.payments import PearlPayment, hand_resource_options, payment_plans
+from portale_von_molthar.game.requirements import AnyOf, ExactValues, Parity, ParityValues
 
 
 def test_payment_decision_uses_one_canonical_path_per_plan() -> None:

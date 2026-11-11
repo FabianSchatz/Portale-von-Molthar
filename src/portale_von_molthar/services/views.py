@@ -12,10 +12,10 @@ from typing import Final, Literal, TypeAlias, TypedDict
 import pyspiel
 
 from portale_von_molthar.agents.bots import Difficulty
-from portale_von_molthar.cards import CHARACTERS, Character
-from portale_von_molthar.decisions import BlueAbilityDecision, RedAbilityDecision
-from portale_von_molthar.molthar import Action, MoltharState
-from portale_von_molthar.payments import PaymentPlan, PearlPayment, PearlSource
+from portale_von_molthar.game.cards import CHARACTERS, Character
+from portale_von_molthar.game.decisions import BlueAbilityDecision, RedAbilityDecision
+from portale_von_molthar.game.molthar import Action, MoltharState
+from portale_von_molthar.game.payments import PaymentPlan, PearlPayment, PearlSource
 from portale_von_molthar.services.catalog import character_name
 
 MoveKind: TypeAlias = Literal[

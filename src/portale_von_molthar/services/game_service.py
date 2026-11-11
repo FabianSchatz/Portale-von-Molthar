@@ -15,10 +15,10 @@ from typing import Final, Literal, TypeAlias, TypedDict
 
 import pyspiel
 
-from portale_von_molthar import molthar  # noqa: F401  (registers the game)
 from portale_von_molthar.agents.bots import Bot, Difficulty, make_bot
-from portale_von_molthar.decisions import PaymentDecision
-from portale_von_molthar.molthar import Action, MoltharState
+from portale_von_molthar.game import molthar  # noqa: F401  (registers the game)
+from portale_von_molthar.game.decisions import PaymentDecision
+from portale_von_molthar.game.molthar import Action, MoltharState
 from portale_von_molthar.services.catalog import character_name
 from portale_von_molthar.services.views import (
     ACTIVATION_ACTIONS,
@@ -382,7 +382,7 @@ class GameService:
         state = room.state
         names = self._names(room)
         connected = [player.connections > 0 or player.bot is not None for player in room.seats]
-        bots = [player.bot for player in room.seats]
+        bots: list[Difficulty | None] = [player.bot for player in room.seats]
         result: ResultView | None = None
         if state is not None and state.is_terminal():
             returns = state.returns()

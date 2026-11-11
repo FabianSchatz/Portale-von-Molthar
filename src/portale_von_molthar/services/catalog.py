@@ -8,7 +8,7 @@ import re
 from functools import cache
 from typing import Final, Literal, TypeAlias, TypedDict
 
-from portale_von_molthar.abilities import (
+from portale_von_molthar.game.abilities import (
     AbilityTiming,
     AbilityType,
     CharacterAbility,
@@ -28,8 +28,8 @@ from portale_von_molthar.abilities import (
     TurnActionsAbility,
     VirtualPearlAbility,
 )
-from portale_von_molthar.cards import CHARACTERS, Character
-from portale_von_molthar.requirements import (
+from portale_von_molthar.game.cards import CHARACTERS, Character
+from portale_von_molthar.game.requirements import (
     AllOf,
     AnyOf,
     ConsecutiveValues,

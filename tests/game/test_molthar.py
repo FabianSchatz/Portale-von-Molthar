@@ -6,9 +6,9 @@ import numpy as np
 import pyspiel
 import pytest
 
-from portale_von_molthar.cards import CHARACTERS
-from portale_von_molthar.decisions import PaymentDecision, RedChoice
-from portale_von_molthar.molthar import (
+from portale_von_molthar.game.cards import CHARACTERS
+from portale_von_molthar.game.decisions import PaymentDecision, RedChoice
+from portale_von_molthar.game.molthar import (
     _HAND_LIMIT,
     _PEARL_COPIES,
     _PEARL_VALUES,

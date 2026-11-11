@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Final, TypeAlias
 import pyspiel
 
 if TYPE_CHECKING:
-    from portale_von_molthar.payments import PaymentPlan, PearlPayment
+    from portale_von_molthar.game.payments import PaymentPlan, PearlPayment
 
 _CHANCE: Final = int(pyspiel.PlayerId.CHANCE)
 

@@ -1,4 +1,4 @@
-"""A simplified *Die Portale von Molthar* implemented as an OpenSpiel Python game.
+"""A simplified *Portale von Molthar* implemented as an OpenSpiel Python game.
 
 Simplifications with respect to the printed rules (see module constants):
 
@@ -28,7 +28,7 @@ from typing import Any, Final, TypeVar
 
 import pyspiel
 
-from portale_von_molthar.abilities import (
+from portale_von_molthar.game.abilities import (
     AbilityTiming,
     DiamondDecreaseAbility,
     DiscardPortalAbility,
@@ -46,8 +46,8 @@ from portale_von_molthar.abilities import (
     TurnActionsAbility,
     VirtualPearlAbility,
 )
-from portale_von_molthar.cards import CHARACTERS, Character
-from portale_von_molthar.decisions import (
+from portale_von_molthar.game.cards import CHARACTERS, Character
+from portale_von_molthar.game.decisions import (
     BlueAbilityDecision,
     BlueChoice,
     DeckTakeStep,
@@ -59,7 +59,7 @@ from portale_von_molthar.decisions import (
     RedAbilityDecision,
     RedChoice,
 )
-from portale_von_molthar.payments import (
+from portale_von_molthar.game.payments import (
     PaymentPlan,
     PearlPayment,
     PearlSource,
@@ -67,7 +67,7 @@ from portale_von_molthar.payments import (
     hand_resource_options,
     payment_plans,
 )
-from portale_von_molthar.requirements import (
+from portale_von_molthar.game.requirements import (
     ExactValues,
     Parity,
     ParityValues,

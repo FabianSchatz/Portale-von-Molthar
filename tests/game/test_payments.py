@@ -4,14 +4,14 @@ from collections import Counter
 
 import pytest
 
-from portale_von_molthar.cards import CHARACTERS, Character
-from portale_von_molthar.payments import (
+from portale_von_molthar.game.cards import CHARACTERS, Character
+from portale_von_molthar.game.payments import (
     PearlPayment,
     PearlSource,
     hand_resource_options,
     payment_plans,
 )
-from portale_von_molthar.requirements import ExactValues
+from portale_von_molthar.game.requirements import ExactValues
 
 
 def _character(card_id: str) -> Character:

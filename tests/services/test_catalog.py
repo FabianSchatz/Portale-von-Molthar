@@ -2,7 +2,7 @@
 
 import pytest
 
-from portale_von_molthar.cards import CHARACTERS
+from portale_von_molthar.game.cards import CHARACTERS
 from portale_von_molthar.services.catalog import character_catalog, character_name
 
 

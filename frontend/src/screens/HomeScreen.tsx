@@ -61,7 +61,7 @@ export function HomeScreen({ onEnter }: { onEnter: (session: JoinResult) => void
   return (
     <main className="app-page">
       <div>
-        <p className="app-display">Die Portale von Molthar</p>
+        <p className="app-display">Portale von Molthar</p>
         <p className="app-lede">Collect pearls, open portals and activate characters. The first to 12 power points ends the game.</p>
       </div>
       {error ? <Alert severity="error">{error}</Alert> : null}

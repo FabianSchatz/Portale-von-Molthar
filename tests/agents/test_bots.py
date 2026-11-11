@@ -8,7 +8,6 @@ import numpy as np
 import pyspiel
 import pytest
 
-from portale_von_molthar import molthar  # noqa: F401  (registers the game)
 from portale_von_molthar.agents.bots import (
     Bot,
     MLPPolicy,
@@ -16,7 +15,8 @@ from portale_von_molthar.agents.bots import (
     RandomBot,
     make_bot,
 )
-from portale_von_molthar.molthar import MoltharState
+from portale_von_molthar.game import molthar  # noqa: F401  (registers the game)
+from portale_von_molthar.game.molthar import MoltharState
 
 _HIDDEN = 8
 

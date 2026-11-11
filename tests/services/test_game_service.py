@@ -6,8 +6,8 @@ from collections import Counter
 import pytest
 
 from portale_von_molthar.agents.bots import RandomBot
-from portale_von_molthar.cards import CHARACTERS
-from portale_von_molthar.molthar import Action, MoltharState
+from portale_von_molthar.game.cards import CHARACTERS
+from portale_von_molthar.game.molthar import Action, MoltharState
 from portale_von_molthar.services.game_service import GameError, GameService
 
 

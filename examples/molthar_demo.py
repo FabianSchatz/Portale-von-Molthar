@@ -9,7 +9,7 @@ import random
 
 import pyspiel
 
-from portale_von_molthar import molthar  # noqa: F401  (registers "python_portale_von_molthar")
+from portale_von_molthar.game import molthar  # noqa: F401  (registers "python_portale_von_molthar")
 
 
 def play_random_game(seed: int | None = None) -> list[float]:

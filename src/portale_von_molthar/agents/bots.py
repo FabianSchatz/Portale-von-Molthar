@@ -16,7 +16,7 @@ from typing import Final, Literal, TypeAlias
 
 import numpy as np
 
-from portale_von_molthar.molthar import MoltharState
+from portale_von_molthar.game.molthar import MoltharState
 
 Difficulty: TypeAlias = Literal["easy", "medium", "hard"]
 

@@ -2,7 +2,7 @@
 
 import pytest
 
-from portale_von_molthar.requirements import (
+from portale_von_molthar.game.requirements import (
     AllOf,
     AnyOf,
     ConsecutiveValues,

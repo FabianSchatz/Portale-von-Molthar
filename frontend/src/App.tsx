@@ -32,7 +32,7 @@ export function App(): ReactElement {
     <ThemeProvider theme={theme}>
       <CssBaseline />
       <header className="app-bar">
-        <h1 className="app-title">Die Portale von Molthar</h1>
+        <h1 className="app-title">Portale von Molthar</h1>
         <ToggleButtonGroup
           size="small"
           exclusive

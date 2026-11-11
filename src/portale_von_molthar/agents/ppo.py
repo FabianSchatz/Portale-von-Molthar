@@ -38,7 +38,7 @@ import pyspiel
 import torch
 from torch import nn
 
-from portale_von_molthar import molthar
+from portale_von_molthar.game import molthar
 
 GAME_NAME: Final = "python_portale_von_molthar"
 _TARGET_POINTS: Final = molthar._TARGET_POINTS  # noqa: SLF001  # score normalisation

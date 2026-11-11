@@ -2,7 +2,7 @@
 
 import pytest
 
-from portale_von_molthar.abilities import (
+from portale_von_molthar.game.abilities import (
     AbilityTiming,
     GainActionsAbility,
     HandLimitAbility,

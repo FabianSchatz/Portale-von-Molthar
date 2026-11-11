@@ -4,9 +4,9 @@ from collections import Counter
 
 import pyspiel
 
-from portale_von_molthar.cards import CHARACTERS
-from portale_von_molthar.decisions import RedAbilityDecision, RedChoice
-from portale_von_molthar.molthar import Action, MoltharState
+from portale_von_molthar.game.cards import CHARACTERS
+from portale_von_molthar.game.decisions import RedAbilityDecision, RedChoice
+from portale_von_molthar.game.molthar import Action, MoltharState
 from portale_von_molthar.services.views import (
     activation_plans,
     activation_target,
