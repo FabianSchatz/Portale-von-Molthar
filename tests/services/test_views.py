@@ -23,9 +23,17 @@ def _character_index(card_id: str) -> int:
     return next(index for index, character in enumerate(CHARACTERS) if character.id == card_id)
 
 
+def _started(state: pyspiel.State) -> pyspiel.State:
+    """Resolve the starting-player chance node of a fresh `state` so that player 0 starts."""
+    state.apply_action(0)
+    return state
+
+
 def _state(players: int = 2) -> MoltharState:
     """Return a dealt state with a fixed display, player 0 to move."""
-    state = pyspiel.load_game(f"python_portale_von_molthar(players={players})").new_initial_state()
+    state = _started(
+        pyspiel.load_game(f"python_portale_von_molthar(players={players})").new_initial_state(),
+    )
     state._pearl_display = [1, 2, 3, 4]  # noqa: SLF001
     goblin = _character_index("goblin")
     state._character_display = [goblin, _character_index("lion")]  # noqa: SLF001

@@ -43,7 +43,7 @@ def test_character_catalog_requirement(card_id: str, requirement: str | list[int
         ("rumpelstiltskin", "Any 3 counts as any value.", "during_turn"),
         ("peter_pan", "Any 1 may count as 8.", "during_turn"),
         ("reaper", "You may redraw your whole hand.", "after_turn"),
-        ("little_red_riding_hood", "Gain 1 extra action every turn.", "persistent"),
+        ("little_red_riding_hood", "Gain 1 extra action now and every turn.", "persistent"),
     ],
 )
 def test_character_catalog_ability(card_id: str, ability: str, timing: str | None) -> None:

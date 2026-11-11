@@ -226,7 +226,9 @@ def test_add_bot_rejects_guests_full_and_running_games() -> None:
 
 def test_bot_to_move() -> None:
     service, game_id = _with_bots(1)
-    assert not service.bot_to_move(game_id)  # the host starts
+    while service.bot_to_move(game_id):  # the starting player is random
+        service.step_bot(game_id)
+    assert not service.bot_to_move(game_id)
     for _ in range(3):
         service.play(game_id, 0, Action.TAKE_PEARL_DECK)
     while _state(service, game_id).current_player() == 0:  # hand-limit discards
@@ -239,7 +241,8 @@ def test_step_bot(bots: int) -> None:
     """Bots answer every decision of long games, and their moves reach the Chronicle."""
     rng = random.Random(bots)  # noqa: S311  (test randomness, not crypto)
     service, game_id = _with_bots(bots, seed=bots)
-    assert not service.step_bot(game_id)  # the host is to move
+    host_starts = not service.bot_to_move(game_id)
+    assert service.step_bot(game_id) is not host_starts  # no bot step on the host's move
     bot_lines = 0
     for _ in range(1500):
         state = _state(service, game_id)

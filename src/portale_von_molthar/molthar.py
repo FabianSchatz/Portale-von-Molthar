@@ -317,6 +317,8 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
         self._diamonds: list[int] = [0] * self._num_players
         self._auto_discard = bool(game.get_parameters().get("auto_discard", False))
         self._cur_player = 0
+        # The starting player is the first chance outcome of the game.
+        self._starter_drawn = False
         # The player decision or chance draw (Reaper, Dumbledore) to resolve next.
         self._pending_step: PendingStep | None = None
         self._actions_left = _ACTIONS_PER_TURN
@@ -446,7 +448,7 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
         if self._game_over:
             return pyspiel.PlayerId.TERMINAL
         # Display refills come first so that turn-boundary choices see the new cards.
-        if self._pending_refill() is not None:
+        if not self._starter_drawn or self._pending_refill() is not None:
             return pyspiel.PlayerId.CHANCE
         if self._pending_step is not None:
             return self._pending_step.actor
@@ -459,8 +461,11 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
         deck, which is equivalent to drawing from a shuffled pile but avoids
         modelling the pile order. A character peeked at by Dumbledore is the
         top card, so it is the next character drawn, whether it refills the
-        display or is taken blind.
+        display or is taken blind. The very first chance node picks the
+        starting player uniformly.
         """
+        if not self._starter_drawn:
+            return [(player, 1.0 / self._num_players) for player in range(self._num_players)]
         deck = self._pending_refill()
         if deck is None:
             raise ValueError("chance_outcomes called on a non-chance node")
@@ -730,7 +735,10 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
         """Apply `action`, which is a chance outcome on chance nodes."""
         self._nodes += 1
         step = self._pending_step
-        if (deck := self._pending_refill()) is not None:
+        if not self._starter_drawn:
+            self._cur_player = action
+            self._starter_drawn = True
+        elif (deck := self._pending_refill()) is not None:
             self._draw(deck, action)
         elif isinstance(step, (PaymentDecision, RedAbilityDecision, BlueAbilityDecision)):
             self._apply_decision(step, action)
@@ -820,6 +828,8 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
 
         The branches mirror the resolution order of `_draw`.
         """
+        if not self._starter_drawn:
+            return f"StartingPlayer:p{action}"
         blind_take = isinstance(self._pending_step, DeckTakeStep)
         if self._pending_refill() is self._pearl_deck:
             if len(self._pearl_display) < _PEARL_DISPLAY_SIZE or not blind_take:
@@ -1143,7 +1153,8 @@ class MoltharState(pyspiel.State):  # type: ignore[misc]
         self._activated_characters[player].append(character_index)
         self._scores[player] += character.points
         self._diamonds[player] += character.diamonds - plan.diamonds_spent
-        if isinstance(character.ability, GainActionsAbility):
+        if isinstance(character.ability, (GainActionsAbility, TurnActionsAbility)):
+            # Turn-action characters also pay out in the turn they are activated.
             self._actions_left += character.ability.actions
         elif isinstance(character.ability, NextPlayerActionAbility):
             self._next_turn_bonus[(player + 1) % self._num_players] += 1

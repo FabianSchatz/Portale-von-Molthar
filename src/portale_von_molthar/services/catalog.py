@@ -196,7 +196,7 @@ def _ability_text(ability: CharacterAbility) -> str:
         return _FIXED_TEXTS[type(ability)]
     if isinstance(ability, (GainActionsAbility, TurnActionsAbility)):
         plural = "s" if ability.actions > 1 else ""
-        when = "now" if isinstance(ability, GainActionsAbility) else "every turn"
+        when = "now" if isinstance(ability, GainActionsAbility) else "now and every turn"
         text = f"Gain {ability.actions} extra action{plural} {when}."
     elif isinstance(ability, VirtualPearlAbility):
         if frozenset(ability.values) == _ALL_PEARL_VALUES:
