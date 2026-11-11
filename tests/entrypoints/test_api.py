@@ -3,6 +3,7 @@
 from pathlib import Path
 
 import pytest
+from fastapi import status
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
@@ -94,10 +95,11 @@ def test_create_app_websocket_bot_game(tmp_path: Path) -> None:
 def test_create_app_websocket_rejects_bad_tokens(client: TestClient) -> None:
     host = client.post("/api/games", json={"name": "Ada"}).json()
     with (
-        pytest.raises(WebSocketDisconnect),
+        pytest.raises(WebSocketDisconnect) as closed,
         client.websocket_connect(f"/ws/{host['game_id']}?token=wrong") as socket,
     ):
         socket.receive_json()
+    assert closed.value.code == status.WS_1008_POLICY_VIOLATION
 
 
 def test_create_app_serves_the_frontend(tmp_path: Path) -> None:

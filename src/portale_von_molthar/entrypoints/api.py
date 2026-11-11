@@ -188,13 +188,15 @@ async def _serve(
     token: str,
 ) -> None:
     """Authenticate one socket, then apply its commands until it disconnects."""
+    # Accept before rejecting: a close during the handshake reaches the browser as
+    # code 1006, so the client would retry forever instead of showing "game is gone".
+    await socket.accept()
     try:
         seat = games.seat_for(game_id, token)
     except GameError:
         await socket.close(code=status.WS_1008_POLICY_VIOLATION)
         return
     game_id = games.view(game_id, seat)["game_id"]
-    await socket.accept()
     connections.add(game_id, seat, socket)
     await connections.broadcast(game_id)
     try:
